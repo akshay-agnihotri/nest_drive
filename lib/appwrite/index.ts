@@ -15,7 +15,7 @@ export const createSessionClient = async () => {
     .setEndpoint(appWriteConfig.endpoint)
     .setProject(appWriteConfig.projectId);
 
-  const session = (await cookies()).get("nest-drive-session");
+  const session = (await cookies()).get("appwrite-session");
 
   if (!session || !session.value) {
     throw new Error("No session found");

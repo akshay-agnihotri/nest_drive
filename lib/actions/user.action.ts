@@ -1,24 +1,17 @@
-//* Create account flow
-//
-// 1.User enters fullName and email
-// 2.Check if user already exists
-// 3.send the otp to the user's email
-// 4.this will send a secret key for creating the session
-// 5.Create a new user document if the user is a new user
-// 6.return the user's accountId and that will be used to complete the login flow
-// 7.Verify the OTP and authenticate to login
 "use server";
 import appWriteConfig from "../appwrite/config";
 import { createAdminClient } from "../appwrite";
 import { Client, ID, Query, Account } from "appwrite";
+import { cookies } from "next/headers";
 
-const getUserByEmail = async (email: string) => {
+export const getUserByEmail = async (email: string) => {
   if (!appWriteConfig.databaseId || !appWriteConfig.usersCollectionId) {
     throw new Error(
       "Database ID and users collection ID must be defined in environment variables"
     );
   }
   const { databases } = await createAdminClient();
+  console.log("alright");
 
   const result = await databases.listDocuments(
     appWriteConfig.databaseId,
@@ -29,7 +22,7 @@ const getUserByEmail = async (email: string) => {
   return result.total > 0 ? result.documents[0] : null;
 };
 
-export const startOtpFlow = async (email: string, fullName?: string) => {
+export const sendOtp = async (email: string) => {
   try {
     // --- Use a STANDARD client for user-facing actions ---
     const client = new Client()
@@ -47,39 +40,71 @@ export const startOtpFlow = async (email: string, fullName?: string) => {
     );
     const userId = sessionToken.userId;
 
-    // 2. Check if a document for this user already exists in our database
-    const existingUser = await getUserByEmail(email);
+    return { userId };
+  } catch (error) {
+    console.error("Cannot send the otp");
+    throw error;
+  }
+};
 
-    // 3. If no document exists, create one using the ADMIN client
-    if (!existingUser) {
-      // Check if fullName was provided for the new user.
-      if (!fullName) {
-        throw new Error("Full name is required for a new account sign-up.");
+export const createUser = async (
+  email: string,
+  fullName: string,
+  userId: string
+) => {
+  try {
+    const { databases, avatars } = await createAdminClient(); // Use admin client only for database creation
+    // Generate avatar URL directly from fullName.
+    const avatarUrl = avatars.getInitials(fullName).toString();
+
+    const userDocument = await databases.createDocument(
+      appWriteConfig.databaseId!,
+      appWriteConfig.usersCollectionId!,
+      userId,
+      {
+        email,
+        fullName,
+        avatar: avatarUrl,
+        accountId: userId, // Use userId as accountId
       }
+    );
 
-      const { databases, avatars } = await createAdminClient(); // Use admin client only for database creation
-
-      const userDocument = await databases.createDocument(
-        appWriteConfig.databaseId!,
-        appWriteConfig.usersCollectionId!,
-        userId, // Use the auth user's ID as the document ID
-        {
-          email,
-          fullName,
-          documentId: userId, // Store the user ID in the document
-          avatar: avatars.getInitials(fullName).toString(),
-        }
-      );
-
-      if (!userDocument) {
-        throw new Error("Failed to create new user");
-      }
+    if (!userDocument) {
+      throw new Error("Failed to create new user");
     }
 
     // 4. Return the userId to the client to complete the login flow
     return { userId };
   } catch (error) {
     console.error("Error in createAccount flow:", error);
+    throw error;
+  }
+};
+
+export const loginUserWithOtp = async (userId: string, otp: string) => {
+  try {
+    const client = new Client()
+      .setEndpoint(appWriteConfig.endpoint!)
+      .setProject(appWriteConfig.projectId!);
+    const account = new Account(client);
+
+    // 2. Verify the OTP and create a new session
+    const session = await account.createSession(userId, otp);
+
+    // 3. Set the session cookie in the browser
+    // This is the crucial step to make the user logged in
+    (await cookies()).set("appwrite-session", session.secret, {
+      path: "/",
+      httpOnly: true,
+      sameSite: "strict",
+      secure: true,
+      expires: new Date(session.expire), // Set cookie expiration
+    });
+
+    console.log("User logged in successfully!");
+    return { success: true, user: session.userId }; // Return a success status
+  } catch (error) {
+    console.error("Error in loginUserWithOtp:", error);
     throw error;
   }
 };

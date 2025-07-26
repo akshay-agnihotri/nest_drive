@@ -1,5 +1,4 @@
 "use client";
-
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -16,6 +15,8 @@ import { Input } from "@/components/ui/input";
 import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { createUser, getUserByEmail, sendOtp } from "@/lib/actions/user.action";
+import OtpModal from "./OtpModal";
 
 type formType = "signIn" | "signUp";
 
@@ -37,6 +38,10 @@ const Authform = ({ type }: { type: formType }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
+  // --- New state for OTP Modal ---
+  const [showOtpModal, setShowOtpModal] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
+
   const formSchema = authFormSchema(type);
 
   // 1. Initialize the form with useForm and zodResolver.
@@ -48,9 +53,73 @@ const Authform = ({ type }: { type: formType }) => {
     },
   });
 
-  // 2. Define a submit handler.
+  const handleUserSignIn = async (values: z.infer<typeof formSchema>) => {
+    setIsLoading(true);
+    setErrorMessage("");
+
+    try {
+      const email = values.email;
+      const user = await getUserByEmail(email);
+
+      if (!user) {
+        setErrorMessage("User not found. Please sign up.");
+        return;
+      }
+
+      // --- Start OTP flow ---
+      const { userId: authUserId } = await sendOtp(email);
+      setUserId(authUserId);
+      setShowOtpModal(true);
+    } catch (error) {
+      const errorMsg =
+        error instanceof Error ? error.message : "An unknown error occurred.";
+      setErrorMessage(errorMsg);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleUserSignUp = async (values: z.infer<typeof formSchema>) => {
+    setIsLoading(true);
+    setErrorMessage("");
+
+    try {
+      const { email, fullName } = values;
+
+      // --- IMPROVEMENT: Check if user exists BEFORE sending OTP ---
+      const existingUser = await getUserByEmail(email);
+      if (existingUser) {
+        setErrorMessage("This email is already registered. Please sign in.");
+        setIsLoading(false); // Stop loading
+        return;
+      }
+
+      const { userId: authUserId } = await sendOtp(email);
+      setUserId(authUserId);
+      setShowOtpModal(true);
+
+      if (!fullName) {
+        throw new Error("fullName is required for sign up.");
+      }
+
+      // --- Create user document in the database ---
+      await createUser(email, fullName, authUserId);
+    } catch (error) {
+      const errorMsg =
+        error instanceof Error ? error.message : "An unknown error occurred.";
+      setErrorMessage(errorMsg);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const onSubmit = (values: z.infer<typeof formSchema>) => {
-    console.log(values);
+    // This function now directly receives the validated form values.
+    if (type === "signIn") {
+      handleUserSignIn(values);
+    } else {
+      handleUserSignUp(values);
+    }
   };
 
   return (
@@ -134,7 +203,16 @@ const Authform = ({ type }: { type: formType }) => {
           </div>
         </form>
       </Form>
-      {/* OTP verification */}
+
+      {/* OTP verification Modal */}
+      {showOtpModal && (
+        <OtpModal
+          email={form.getValues("email")}
+          userId={userId}
+          showOtpModal={showOtpModal}
+          setShowOtpModal={setShowOtpModal}
+        />
+      )}
     </>
   );
 };
