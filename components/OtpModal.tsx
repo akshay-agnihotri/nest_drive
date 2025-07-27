@@ -12,7 +12,11 @@ import {
   InputOTPSlot,
 } from "@/components/ui/input-otp";
 import { Button } from "@/components/ui/button";
-import { loginUserWithOtp, sendOtp } from "@/lib/actions/user.action";
+import {
+  createUser,
+  loginUserWithOtp,
+  sendOtp,
+} from "@/lib/actions/user.action";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -22,11 +26,15 @@ const OtpModal = ({
   showOtpModal,
   setShowOtpModal,
   email,
+  type,
+  fullName,
 }: {
-  userId: string | null;
+  userId: string;
   showOtpModal: boolean;
   setShowOtpModal: React.Dispatch<React.SetStateAction<boolean>>;
   email: string | null;
+  type: "signIn" | "signUp";
+  fullName: string | undefined;
 }) => {
   const [otp, setOtp] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -37,12 +45,6 @@ const OtpModal = ({
   const handleResendOtp = async () => {
     setIsLoading(true);
     setErrorMessage("");
-
-    if (!userId) {
-      setErrorMessage("User ID is not available.");
-      setIsLoading(false);
-      return;
-    }
 
     try {
       // Call your server action to resend the OTP
@@ -62,16 +64,13 @@ const OtpModal = ({
     setIsLoading(true);
     setErrorMessage("");
 
-    // 1. Validate that we have the necessary data although this block never runs
-    if (!userId || otp.length !== 6) {
-      setErrorMessage("Please enter a valid 6-digit code.");
-      setIsLoading(false);
-      return;
-    }
-
     try {
       // 2. Call your server action to verify the code and log in
       const res = await loginUserWithOtp(userId, otp);
+
+      if (type === "signUp") {
+        await createUser(email!, fullName!, userId);
+      }
 
       // 3. If successful, you can redirect the user or update the UI accordingly
       if (res.success) router.push("/");

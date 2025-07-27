@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input";
 import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { createUser, getUserByEmail, sendOtp } from "@/lib/actions/user.action";
+import { getUserByEmail, sendOtp } from "@/lib/actions/user.action";
 import OtpModal from "./OtpModal";
 
 type formType = "signIn" | "signUp";
@@ -40,7 +40,7 @@ const Authform = ({ type }: { type: formType }) => {
 
   // --- New state for OTP Modal ---
   const [showOtpModal, setShowOtpModal] = useState(false);
-  const [userId, setUserId] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string>("");
 
   const formSchema = authFormSchema(type);
 
@@ -84,9 +84,9 @@ const Authform = ({ type }: { type: formType }) => {
     setErrorMessage("");
 
     try {
-      const { email, fullName } = values;
+      const { email } = values;
 
-      // --- IMPROVEMENT: Check if user exists BEFORE sending OTP ---
+      // Check if user exists BEFORE sending OTP
       const existingUser = await getUserByEmail(email);
       if (existingUser) {
         setErrorMessage("This email is already registered. Please sign in.");
@@ -97,13 +97,6 @@ const Authform = ({ type }: { type: formType }) => {
       const { userId: authUserId } = await sendOtp(email);
       setUserId(authUserId);
       setShowOtpModal(true);
-
-      if (!fullName) {
-        throw new Error("fullName is required for sign up.");
-      }
-
-      // --- Create user document in the database ---
-      await createUser(email, fullName, authUserId);
     } catch (error) {
       const errorMsg =
         error instanceof Error ? error.message : "An unknown error occurred.";
@@ -207,7 +200,9 @@ const Authform = ({ type }: { type: formType }) => {
       {/* OTP verification Modal */}
       {showOtpModal && (
         <OtpModal
+          type={type}
           email={form.getValues("email")}
+          fullName={form.getValues("fullName")}
           userId={userId}
           showOtpModal={showOtpModal}
           setShowOtpModal={setShowOtpModal}

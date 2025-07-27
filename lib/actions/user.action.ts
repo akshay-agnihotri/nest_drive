@@ -54,8 +54,14 @@ export const createUser = async (
 ) => {
   try {
     const { databases, avatars } = await createAdminClient(); // Use admin client only for database creation
-    // Generate avatar URL directly from fullName.
-    const avatarUrl = avatars.getInitials(fullName).toString();
+    // 1. Get the raw image data as an ArrayBuffer
+    const avatarBuffer = await avatars.getInitials(fullName, 256, 256); // Returns a Promise<ArrayBuffer>
+    // 2. Convert the ArrayBuffer to a Base64 string
+    const base64Image = Buffer.from(avatarBuffer).toString("base64");
+    // 3. Create the full Data URL
+    const avatarUrl = `data:image/png;base64,${base64Image}`;
+    
+    console.log("Avatar URL:", avatarUrl);
 
     const userDocument = await databases.createDocument(
       appWriteConfig.databaseId!,
@@ -64,7 +70,7 @@ export const createUser = async (
       {
         email,
         fullName,
-        avatar: avatarUrl,
+        avatar: avatarUrl, // Use the generated avatar URL
         accountId: userId, // Use userId as accountId
       }
     );
@@ -97,7 +103,7 @@ export const loginUserWithOtp = async (userId: string, otp: string) => {
       path: "/",
       httpOnly: true,
       sameSite: "strict",
-      secure: true,
+      secure: process.env.NODE_ENV === "production",
       expires: new Date(session.expire), // Set cookie expiration
     });
 
