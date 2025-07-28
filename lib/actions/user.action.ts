@@ -1,21 +1,15 @@
 "use server";
 import appWriteConfig from "../appwrite/config";
-import { createAdminClient } from "../appwrite";
+import { createAdminClient, createSessionClient } from "../appwrite";
 import { Client, ID, Query, Account } from "appwrite";
 import { cookies } from "next/headers";
 
 export const getUserByEmail = async (email: string) => {
-  if (!appWriteConfig.databaseId || !appWriteConfig.usersCollectionId) {
-    throw new Error(
-      "Database ID and users collection ID must be defined in environment variables"
-    );
-  }
   const { databases } = await createAdminClient();
-  console.log("alright");
 
   const result = await databases.listDocuments(
-    appWriteConfig.databaseId,
-    appWriteConfig.usersCollectionId,
+    appWriteConfig.databaseId!,
+    appWriteConfig.usersCollectionId!,
     [Query.equal("email", email)]
   );
 
@@ -24,14 +18,11 @@ export const getUserByEmail = async (email: string) => {
 
 export const sendOtp = async (email: string) => {
   try {
-    // --- Use a STANDARD client for user-facing actions ---
     const client = new Client()
       .setEndpoint(appWriteConfig.endpoint!)
       .setProject(appWriteConfig.projectId!);
 
     const account = new Account(client);
-
-    // --- The rest of the logic ---
 
     // 1. Send the OTP. This creates an auth user if they don't exist.
     const sessionToken = await account.createEmailToken(
@@ -60,8 +51,6 @@ export const createUser = async (
     const base64Image = Buffer.from(avatarBuffer).toString("base64");
     // 3. Create the full Data URL
     const avatarUrl = `data:image/png;base64,${base64Image}`;
-    
-    console.log("Avatar URL:", avatarUrl);
 
     const userDocument = await databases.createDocument(
       appWriteConfig.databaseId!,
@@ -89,13 +78,12 @@ export const createUser = async (
 
 export const loginUserWithOtp = async (userId: string, otp: string) => {
   try {
-    const client = new Client()
-      .setEndpoint(appWriteConfig.endpoint!)
-      .setProject(appWriteConfig.projectId!);
-    const account = new Account(client);
+    const { account } = await createAdminClient();
 
     // 2. Verify the OTP and create a new session
     const session = await account.createSession(userId, otp);
+
+    console.log("Session created:", session);
 
     // 3. Set the session cookie in the browser
     // This is the crucial step to make the user logged in
@@ -111,6 +99,26 @@ export const loginUserWithOtp = async (userId: string, otp: string) => {
     return { success: true, user: session.userId }; // Return a success status
   } catch (error) {
     console.error("Error in loginUserWithOtp:", error);
+    throw error;
+  }
+};
+
+export const getCurrentUser = async () => {
+  try {
+    // 1. Get the authenticated user from the Auth service
+    const { account } = await createSessionClient();
+    const authUser = await account.get();
+
+    // 2. Get the user's data from your custom Database collection
+    const userDocument = await getUserByEmail(authUser.email);
+
+    if (!userDocument) {
+      throw new Error("User not found in the database");
+    }
+    
+    return userDocument;
+  } catch (error) {
+    console.error("Error getting current user:", error);
     throw error;
   }
 };
