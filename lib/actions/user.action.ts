@@ -3,6 +3,7 @@ import appWriteConfig from "../appwrite/config";
 import { createAdminClient, createSessionClient } from "../appwrite";
 import { Client, ID, Query, Account } from "appwrite";
 import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 
 export const getUserByEmail = async (email: string) => {
   const { databases } = await createAdminClient();
@@ -115,10 +116,25 @@ export const getCurrentUser = async () => {
     if (!userDocument) {
       throw new Error("User not found in the database");
     }
-    
+
     return userDocument;
   } catch (error) {
     console.error("Error getting current user:", error);
     throw error;
+  }
+};
+
+export const signOut = async () => {
+  try {
+    const { account } = await createSessionClient();
+
+    (await cookies()).delete("appwrite-session");
+
+    await account.deleteSession("current");
+  } catch (error) {
+    console.error("Error signing out:", error);
+    throw error;
+  } finally {
+    redirect("/sign-in");
   }
 };

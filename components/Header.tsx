@@ -1,8 +1,10 @@
+"use client";
 import React from "react";
 import { Button } from "@/components/ui/button";
 import Image from "next/image";
 import Fileuploader from "./Fileuploader";
 import Search from "./Search";
+import { signOut } from "@/lib/actions/user.action";
 
 const Header = () => {
   return (
@@ -10,7 +12,7 @@ const Header = () => {
       <Search />
       <div className="header-wrapper">
         <Fileuploader />
-        <form action="">
+        <form action={signOut}>
           <Button type="submit" className="sign-out-button">
             <Image
               src="/assets/icons/logout.svg"

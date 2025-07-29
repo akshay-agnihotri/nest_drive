@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 
 // --- EDIT THIS PART ---
 // 1. Import your function from the action file.
-import { getCurrentUser } from "@/lib/actions/user.action";
+import { signOut } from "@/lib/actions/user.action";
 // --------------------
 
 export async function GET() {
@@ -13,7 +13,7 @@ export async function GET() {
   try {
     // --- EDIT THIS PART ---
     // 2. Call your function. Add arguments if it needs any.
-    const result = await getCurrentUser();
+    const result = await signOut();
     // --------------------
 
     console.log("Action ran successfully!");
