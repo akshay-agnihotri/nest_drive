@@ -6,12 +6,12 @@ import Fileuploader from "./Fileuploader";
 import Search from "./Search";
 import { signOut } from "@/lib/actions/user.action";
 
-const Header = () => {
+const Header = ({ ownerId }: { ownerId: string }) => {
   return (
     <header className="header">
       <Search />
       <div className="header-wrapper">
-        <Fileuploader />
+        <Fileuploader ownerId={ownerId} className="" />
         <form action={signOut}>
           <Button type="submit" className="sign-out-button">
             <Image
