@@ -1,5 +1,5 @@
 "use client";
-import React, { use, useCallback, useState } from "react";
+import React, { useCallback, useState } from "react";
 import { useDropzone } from "react-dropzone";
 import { Button } from "./ui/button";
 import { cn, getFileType } from "@/lib/utils";
