@@ -5,16 +5,31 @@ import { Client, ID, Query, Account } from "appwrite";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
+// Add extra safety layer
 export const getUserByEmail = async (email: string) => {
-  const { databases } = await createAdminClient();
+  try {
+    // Add small delay in development to avoid timing issues
+    if (process.env.NODE_ENV === "development") {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
 
-  const result = await databases.listDocuments(
-    appWriteConfig.databaseId!,
-    appWriteConfig.usersCollectionId!,
-    [Query.equal("email", email)]
-  );
+    const { databases } = await createAdminClient();
+    const userList = await databases.listDocuments(
+      appWriteConfig.databaseId!,
+      appWriteConfig.usersCollectionId!,
+      [Query.equal("email", [email])]
+    );
 
-  return result.total > 0 ? result.documents[0] : null;
+    if (userList.documents.length === 0) {
+      console.log("No user found with this email:", email);
+      return null;
+    }
+
+    return userList.documents[0];
+  } catch (error) {
+    console.error("Error in getUserByEmail, returning null:", error);
+    return null;
+  }
 };
 
 export const sendOtp = async (email: string) => {
@@ -109,6 +124,11 @@ export const getCurrentUser = async () => {
     // 1. Get the authenticated user from the Auth service
     const { account } = await createSessionClient();
     const authUser = await account.get();
+
+    if (!authUser?.email) {
+      console.log("No authenticated user or email found");
+      return null;
+    }
 
     // 2. Get the user's data from your custom Database collection
     const userDocument = await getUserByEmail(authUser.email);

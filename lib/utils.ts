@@ -97,3 +97,56 @@ export function formatBytes(bytes: number, decimals = 2) {
 
   return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + " " + sizes[i];
 }
+
+/**
+ * Retry utility function for handling network issues
+ * @param fn - The async function to retry
+ * @param retries - Number of retries (default: 1, total 2 attempts)
+ * @param delay - Delay between retries in milliseconds (default: 500ms for quick retry)
+ * @returns The result of the function or null if all retries fail
+ */
+export const withRetry = async <T>(
+  fn: () => Promise<T>,
+  retries: number = 1,
+  delay: number = 500
+): Promise<T | null> => {
+  let lastError: unknown = null;
+
+  for (let i = 0; i <= retries; i++) {
+    try {
+      console.log(`🔄 Attempt ${i + 1}/${retries + 1}...`);
+      const result = await fn();
+
+      if (result) {
+        console.log(`✅ Success on attempt ${i + 1}`);
+        return result;
+      }
+
+      if (i < retries) {
+        console.log(
+          `⚠️ Attempt ${i + 1}: Function returned falsy value, retrying...`
+        );
+        if (delay > 0) {
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        }
+      }
+    } catch (error) {
+      lastError = error;
+      console.log(`❌ Attempt ${i + 1}: Error occurred:`, error);
+
+      if (i < retries) {
+        console.log(`🔄 Retrying in ${delay}ms...`);
+        if (delay > 0) {
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        }
+      }
+    }
+  }
+
+  console.log(
+    `💀 All ${retries + 1} attempts failed, returning null. Last error:`,
+    lastError
+  );
+  // NEVER THROW - Always return null
+  return null;
+};

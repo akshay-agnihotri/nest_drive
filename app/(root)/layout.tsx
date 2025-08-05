@@ -2,31 +2,22 @@ import Header from "@/components/Header";
 import MobileNavigation from "@/components/MobileNavigation";
 import Sidebar from "@/components/Sidebar";
 import { getCurrentUser } from "@/lib/actions/user.action";
+import { withRetry } from "@/lib/utils";
 import { redirect } from "next/navigation";
 
 import React from "react";
 
 const Layout = async ({ children }: { children: React.ReactNode }) => {
-  let currentUser;
-
-  try {
-    currentUser = await getCurrentUser();
-  } catch (error) {
-    console.log("Error ", error);
-    return redirect("/sign-in");
-  }
-
-  // Add a check to ensure currentUser is not null or undefined
-  // before trying to use its properties.
+ 
+  const currentUser = await withRetry(() => getCurrentUser(), 1, 500);
   if (!currentUser) {
     return redirect("/sign-in");
   }
 
-
   return (
     <main className="flex h-screen">
       <Sidebar
-        fullName={currentUser.fullName}
+        fullName={currentUser.fullName} 
         email={currentUser.email}
         avatar={currentUser.avatar}
       />

@@ -2,9 +2,27 @@
 
 import { createAdminClient } from "../appwrite";
 import { ID, Permission, Role } from "node-appwrite"; // 1. Import Permission and Role
-import { getFileType } from "@/lib/utils"; // Assuming you have this utility function
+import { getFileType, withRetry } from "@/lib/utils"; // Import retry utility
 import appWriteConfig from "../appwrite/config";
 import { revalidatePath } from "next/cache";
+import { getCurrentUser } from "./user.action";
+
+/**
+ * Test Appwrite connection health
+ */
+export const testAppwriteConnection = async () => {
+  try {
+    const { databases } = await createAdminClient();
+    const { databaseId } = appWriteConfig;
+
+    // Simple ping to check connection
+    await databases.listCollections(databaseId!);
+    return true;
+  } catch (error) {
+    console.error("Appwrite connection failed:", error);
+    return false;
+  }
+};
 
 /**
  * Uploads a single file to Appwrite Storage and creates a corresponding document in the database.
@@ -18,11 +36,15 @@ import { revalidatePath } from "next/cache";
  * @returns An object with success status and the created database document or an error message.
  */
 export const uploadFile = async (file: File, ownerId: string, path: string) => {
-  let uploadedFile; // Declare here to access it in the outer catch block
-  let createdFileDocument; // Declare here to access it in the nested catch block
+  let uploadedFile: any = null;
+  let createdFileDocument: any = null;
+  let storage: any = null;
+  let databases: any = null;
 
   try {
-    const { storage, databases } = await createAdminClient();
+    const adminClient = await createAdminClient();
+    storage = adminClient.storage;
+    databases = adminClient.databases;
 
     const {
       projectId,
@@ -33,6 +55,7 @@ export const uploadFile = async (file: File, ownerId: string, path: string) => {
       filesCollectionId,
     } = appWriteConfig;
 
+    // Input validation
     if (!file) {
       throw new Error("No file was provided to upload.");
     }
@@ -40,15 +63,24 @@ export const uploadFile = async (file: File, ownerId: string, path: string) => {
       throw new Error("Owner ID is required to upload files.");
     }
 
-    // Step 1: Upload the file to the bucket with specific user permissions
-    uploadedFile = await storage.createFile(bucketId!, ID.unique(), file, [
-      Permission.read(Role.user(ownerId)), // The user can read their own file
-      Permission.update(Role.user(ownerId)), // The user can update their own file
-      Permission.delete(Role.user(ownerId)), // The user can delete their own file
-    ]);
+    // Step 1: Upload file to storage with retry
+    uploadedFile = await withRetry(
+      () =>
+        storage.createFile(bucketId!, ID.unique(), file, [
+          Permission.read(Role.user(ownerId)),
+          Permission.update(Role.user(ownerId)),
+          Permission.delete(Role.user(ownerId)),
+        ]),
+      1,
+      1000
+    );
 
-    // --- Nested try...catch for database operations ---
+    if (!uploadedFile) {
+      throw new Error("Failed to upload file to storage after retries");
+    }
+
     try {
+      // Step 2: Create file document
       const fileUrl = `${endpoint}/storage/buckets/${bucketId}/files/${uploadedFile.$id}/view?project=${projectId}`;
       const { type, extension } = getFileType(file.name);
 
@@ -63,59 +95,127 @@ export const uploadFile = async (file: File, ownerId: string, path: string) => {
         size: uploadedFile.sizeOriginal,
       };
 
-      // Step 2: Create a document for the uploaded file
-      createdFileDocument = await databases.createDocument(
-        databaseId!,
-        filesCollectionId!,
-        ID.unique(),
-        documentData
+      createdFileDocument = await withRetry(
+        () =>
+          databases.createDocument(
+            databaseId!,
+            filesCollectionId!,
+            ID.unique(),
+            documentData
+          ),
+        1,
+        500
       );
 
-      const newFileId = createdFileDocument.$id;
+      if (!createdFileDocument) {
+        throw new Error("Failed to create file document after retries");
+      }
 
-      const userDoc = await databases.getDocument(
-        databaseId!,
-        usersCollectionId!,
-        ownerId
+      // Step 3: Update user document
+      const userDoc = await withRetry(
+        () => databases.getDocument(databaseId!, usersCollectionId!, ownerId),
+        1,
+        500
       );
+
+      if (!userDoc) {
+        throw new Error("Failed to fetch user document");
+      }
+
       const existingFileIds =
-        userDoc.files?.map((file: { $id: string }) => file.$id) || [];
+        (userDoc as any).files?.map((file: { $id: string }) => file.$id) || [];
+      const updatedFileIds = [...existingFileIds, createdFileDocument.$id];
 
-      const updatedFileIds = [...existingFileIds, newFileId];
-
-      // Step 3: Update the user's document
-      await databases.updateDocument(databaseId!, usersCollectionId!, ownerId, {
-        files: updatedFileIds,
-      });
+      await withRetry(
+        () =>
+          databases.updateDocument(databaseId!, usersCollectionId!, ownerId, {
+            files: updatedFileIds,
+          }),
+        1,
+        500
+      );
 
       revalidatePath(path);
       console.log("File uploaded and user document updated successfully.");
       return { success: true, data: createdFileDocument };
     } catch (dbError) {
-      // --- CLEANUP STEP ---
       console.error("Database operation failed. Starting cleanup...");
-      // 1. Delete the file from storage.
-      await storage.deleteFile(bucketId!, uploadedFile.$id);
 
-      // 2. If the file document was created, delete it as well.
-      if (createdFileDocument) {
-        await databases.deleteDocument(
-          databaseId!,
-          filesCollectionId!,
-          createdFileDocument.$id
-        );
-      }
+      // Safe cleanup with error handling
+      await safeCleanup(
+        storage,
+        databases,
+        uploadedFile,
+        createdFileDocument,
+        bucketId!,
+        databaseId!,
+        filesCollectionId!
+      );
 
-      // --------------------
-      throw dbError; // Re-throw the database error to be caught by the outer catch block
+      throw dbError;
     }
-    // ----------------------------------------------------
   } catch (error) {
     console.error("Error during file upload and document creation:", error);
+
+    // ✅ Fixed: Only cleanup if we have storage and databases initialized
+    if (storage && databases && uploadedFile && !createdFileDocument) {
+      try {
+        await safeCleanup(
+          storage,
+          databases,
+          uploadedFile,
+          null,
+          appWriteConfig.bucketId!,
+          appWriteConfig.databaseId!,
+          appWriteConfig.filesCollectionId!
+        );
+      } catch (cleanupError) {
+        console.error("Cleanup failed:", cleanupError);
+        // Don't throw cleanup errors
+      }
+    }
+
     if (error instanceof Error) {
       return { success: false, error: error.message };
     }
     return { success: false, error: "An unknown error occurred." };
+  }
+};
+
+// Helper function for safe cleanup
+const safeCleanup = async (
+  storage: any,
+  databases: any,
+  uploadedFile: any,
+  createdFileDocument: any,
+  bucketId: string,
+  databaseId: string,
+  filesCollectionId: string
+) => {
+  // Clean up storage file
+  if (uploadedFile) {
+    try {
+      await storage.deleteFile(bucketId, uploadedFile.$id);
+      console.log("Storage file cleaned up successfully");
+    } catch (cleanupError) {
+      console.error("Failed to cleanup storage file:", cleanupError);
+      // Don't throw - just log the error
+    }
+  }
+
+  // Clean up database document
+  if (createdFileDocument) {
+    try {
+      await databases.deleteDocument(
+        databaseId,
+        filesCollectionId,
+        createdFileDocument.$id
+      );
+      console.log("Database document cleaned up successfully");
+    } catch (cleanupError) {
+      console.error("Failed to cleanup database document:", cleanupError);
+      // Don't throw - just log the error
+    }
   }
 };
 
@@ -132,7 +232,12 @@ export const getFiles = async (ownerId: string, type?: string) => {
     const { databaseId, usersCollectionId } = appWriteConfig;
 
     if (!ownerId) {
-      throw new Error("Owner ID is required to get files.");
+      return {
+        success: false,
+        error: "INVALID_OWNER",
+        message: "Owner ID is required to get files",
+        files: [],
+      };
     }
 
     // 2. Fetch the specific user's document from the 'users' collection
@@ -142,24 +247,119 @@ export const getFiles = async (ownerId: string, type?: string) => {
       ownerId
     );
 
-    // 3. Check if the user has any files. The 'files' attribute contains the full related documents.
+    // 3. Check if the user has any files
     if (!userDoc.files || userDoc.files.length === 0) {
-      return []; // Return an empty array if the user has no files
+      return {
+        success: true,
+        error: null,
+        message: "No files uploaded yet",
+        files: [],
+      };
     }
 
     // 4. Filter the files based on the 'type' parameter, if provided
-    if (type) {
+    if (type && type !== "all") {
       const filteredFiles = userDoc.files.filter(
         (file: { type: string }) => file.type === type
       );
-      return filteredFiles;
+
+      return {
+        success: true,
+        error: null,
+        message:
+          filteredFiles.length === 0 ? `No ${type} files found` : "Success",
+        files: filteredFiles,
+      };
     }
 
-    // 5. If no type is specified, return all the user's files
-    return userDoc.files;
+    // 5. Return all files
+    return {
+      success: true,
+      error: null,
+      message: "Success",
+      files: userDoc.files,
+    };
   } catch (error) {
     console.error("Error fetching files:", error);
-    // Return an empty array in case of an error to prevent crashes
-    return [];
+
+    // Return error info instead of empty array
+    return {
+      success: false,
+      error: "FETCH_ERROR",
+      message: "Unable to load files due to connection issues",
+      files: [],
+    };
+  }
+};
+
+/**
+ * Gets files for the current authenticated user with optional type filtering
+ * @param type - The type of files to filter by (e.g., 'image', 'document', 'all'). If omitted, all files are returned.
+ * @returns An object with files array and total size, or redirect info if user not authenticated
+ */
+export const getCurrentUserFiles = async (type?: string) => {
+  try {
+    // Get current user
+    const currentUser = await withRetry(() => getCurrentUser(), 1, 500);
+
+    if (!currentUser) {
+      return { shouldRedirect: true, redirectTo: "/sign-in" };
+    }
+
+    // Get files with enhanced error handling
+    const result = await withRetry(
+      () => getFiles(currentUser.$id, type),
+      1,
+      300
+    );
+
+    // Handle different response types from getFiles
+    if (!result) {
+      return {
+        files: [],
+        totalSize: 0,
+        shouldRedirect: false,
+        error: "CONNECTION_ERROR",
+        message:
+          "Unable to connect to server. Please check your internet connection.",
+      };
+    }
+
+    // Check if getFiles returned an error
+    if (!result.success) {
+      return {
+        files: [],
+        totalSize: 0,
+        shouldRedirect: false,
+        error: result.error,
+        message: result.message,
+      };
+    }
+
+    // Success case - extract files from result
+    const files = result.files || [];
+
+    // Calculate total size
+    const totalSize = (files as { size: number }[]).reduce(
+      (sum: number, file: { size: number }) => sum + (file?.size || 0),
+      0
+    );
+
+    return {
+      files,
+      totalSize,
+      shouldRedirect: false,
+      error: files.length === 0 ? "NO_FILES" : null,
+      message: result.message,
+    };
+  } catch (error) {
+    console.error("Error getting current user files:", error);
+    return {
+      files: [],
+      totalSize: 0,
+      shouldRedirect: false,
+      error: "UNEXPECTED_ERROR",
+      message: "Something went wrong. Please try again.",
+    };
   }
 };
