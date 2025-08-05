@@ -3,7 +3,7 @@ const nextConfig = {
   // Add this experimental block
   experimental: {
     serverActions: {
-      bodySizeLimit: "50mb", // Increase the limit to 50 MB
+      bodySizeLimit: "100mb", // Increase the limit to 100 MB (default is 1 MB)
     },
   },
 };

@@ -114,13 +114,18 @@ export const getCurrentUser = async () => {
     const userDocument = await getUserByEmail(authUser.email);
 
     if (!userDocument) {
-      throw new Error("User not found in the database");
+      // User is authenticated but not in our DB (should not happen in normal flow)
+      console.warn("Authenticated user not found in the database.");
+      return null;
     }
 
+    // On success, return the full user document
     return userDocument;
   } catch (error) {
-    console.error("Error getting current user:", error);
-    throw error;
+    // This will catch any error (e.g., "No session found")
+    // and instead of crashing, it will return null.
+    console.error("Could not get current user, returning null:", error);
+    return null;
   }
 };
 

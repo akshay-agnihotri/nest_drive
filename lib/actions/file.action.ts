@@ -4,6 +4,7 @@ import { createAdminClient } from "../appwrite";
 import { ID, Permission, Role } from "node-appwrite"; // 1. Import Permission and Role
 import { getFileType } from "@/lib/utils"; // Assuming you have this utility function
 import appWriteConfig from "../appwrite/config";
+import { revalidatePath } from "next/cache";
 
 /**
  * Uploads a single file to Appwrite Storage and creates a corresponding document in the database.
@@ -16,7 +17,7 @@ import appWriteConfig from "../appwrite/config";
  * @param ownerId - The document ID of the user in the 'users' collection.
  * @returns An object with success status and the created database document or an error message.
  */
-export const uploadFile = async (file: File, ownerId: string) => {
+export const uploadFile = async (file: File, ownerId: string, path: string) => {
   let uploadedFile; // Declare here to access it in the outer catch block
   let createdFileDocument; // Declare here to access it in the nested catch block
 
@@ -87,6 +88,7 @@ export const uploadFile = async (file: File, ownerId: string) => {
         files: updatedFileIds,
       });
 
+      revalidatePath(path);
       console.log("File uploaded and user document updated successfully.");
       return { success: true, data: createdFileDocument };
     } catch (dbError) {
@@ -114,5 +116,50 @@ export const uploadFile = async (file: File, ownerId: string) => {
       return { success: false, error: error.message };
     }
     return { success: false, error: "An unknown error occurred." };
+  }
+};
+
+/**
+ * Fetches the files associated with a specific user, with an option to filter by type.
+ * @param ownerId - The document ID of the user in the 'users' collection.
+ * @param type - The type of files to filter by (e.g., 'image', 'document'). If omitted, all files are returned.
+ * @returns An array of file documents.
+ */
+export const getFiles = async (ownerId: string, type?: string) => {
+  try {
+    // 1. Get the databases service from our admin client
+    const { databases } = await createAdminClient();
+    const { databaseId, usersCollectionId } = appWriteConfig;
+
+    if (!ownerId) {
+      throw new Error("Owner ID is required to get files.");
+    }
+
+    // 2. Fetch the specific user's document from the 'users' collection
+    const userDoc = await databases.getDocument(
+      databaseId!,
+      usersCollectionId!,
+      ownerId
+    );
+
+    // 3. Check if the user has any files. The 'files' attribute contains the full related documents.
+    if (!userDoc.files || userDoc.files.length === 0) {
+      return []; // Return an empty array if the user has no files
+    }
+
+    // 4. Filter the files based on the 'type' parameter, if provided
+    if (type) {
+      const filteredFiles = userDoc.files.filter(
+        (file: { type: string }) => file.type === type
+      );
+      return filteredFiles;
+    }
+
+    // 5. If no type is specified, return all the user's files
+    return userDoc.files;
+  } catch (error) {
+    console.error("Error fetching files:", error);
+    // Return an empty array in case of an error to prevent crashes
+    return [];
   }
 };

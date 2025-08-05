@@ -7,6 +7,7 @@ import Image from "next/image";
 import Thumbnail from "./Thumbnail";
 import { uploadFile } from "@/lib/actions/file.action";
 import { toast } from "sonner";
+import { usePathname } from "next/navigation";
 
 // Helper function to create a delay
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -20,6 +21,7 @@ const Fileuploader = ({
 }) => {
   const [files, setFiles] = useState<File[]>([]);
   const [isUploading, setIsUploading] = useState<boolean>(false); // This state is not used, consider removing it
+  const path = usePathname();
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     setFiles((prev) => [...prev, ...acceptedFiles]);
@@ -57,7 +59,7 @@ const Fileuploader = ({
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
           try {
             // Attempt to upload the file
-            const result = await uploadFile(file, ownerId);
+            const result = await uploadFile(file, ownerId, path);
 
             if (!result.success) {
               // If the server returns a failure, treat it as an error to trigger a retry
