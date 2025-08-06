@@ -6,6 +6,7 @@ export interface FileDocument {
   size: number;
   url: string;
   bucketField: string;
+  $createdAt: string;
 }
 
 export interface UserDocument {
@@ -21,4 +22,10 @@ export interface UserDocument {
     size: number;
     url: string;
   }>;
+}
+
+export interface ActionType {
+  label: string;
+  icon: string;
+  value: string;
 }

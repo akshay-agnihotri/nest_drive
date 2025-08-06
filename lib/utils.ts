@@ -160,3 +160,57 @@ export const generateFileURL = (bucketField: string) => {
   return `${endpoint}/storage/buckets/${bucketId}/files/${bucketField}/view?project=${projectId}`;
 };
 
+export const generateFileDownloadURL = (bucketField: string) => {
+  const { endpoint, projectId, bucketId } = appWriteConfig;
+  return `${endpoint}/storage/buckets/${bucketId}/files/${bucketField}/download?project=${projectId}`;
+};
+
+export const formatDateTime = (dateString: string) => {
+  const date = new Date(dateString);
+
+  // Get time in 12-hour format with a.m./p.m.
+  const timeOptions: Intl.DateTimeFormatOptions = {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  };
+
+  // Get date with short month
+  const dateOptions: Intl.DateTimeFormatOptions = {
+    day: "numeric",
+    month: "short",
+  };
+
+  const time = date.toLocaleTimeString("en-US", timeOptions).toLowerCase();
+  const formattedDate = date.toLocaleDateString("en-US", dateOptions);
+
+  return `${time}, ${formattedDate}`;
+};
+
+export const actionsDropdownItems = [
+  {
+    label: "Rename",
+    icon: "/assets/icons/edit.svg",
+    value: "rename",
+  },
+  {
+    label: "Details",
+    icon: "/assets/icons/info.svg",
+    value: "details",
+  },
+  {
+    label: "Share",
+    icon: "/assets/icons/share.svg",
+    value: "share",
+  },
+  {
+    label: "Download",
+    icon: "/assets/icons/download.svg",
+    value: "download",
+  },
+  {
+    label: "Delete",
+    icon: "/assets/icons/delete.svg",
+    value: "delete",
+  },
+];
