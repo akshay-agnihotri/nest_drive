@@ -8,12 +8,8 @@ import { redirect } from "next/navigation";
 // Add extra safety layer
 export const getUserByEmail = async (email: string) => {
   try {
-    // Add small delay in development to avoid timing issues
-    if (process.env.NODE_ENV === "development") {
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    }
-
     const { databases } = await createAdminClient();
+
     const userList = await databases.listDocuments(
       appWriteConfig.databaseId!,
       appWriteConfig.usersCollectionId!,
@@ -27,7 +23,7 @@ export const getUserByEmail = async (email: string) => {
 
     return userList.documents[0];
   } catch (error) {
-    console.error("Error in getUserByEmail, returning null:", error);
+    console.log("Error in getUserByEmail, returning null:", error);
     return null;
   }
 };

@@ -1,11 +1,11 @@
 "use server";
 
-import { createAdminClient } from "../appwrite";
+import { createAdminClient, createSessionClient } from "../appwrite";
 import { ID, Permission, Role } from "node-appwrite"; // 1. Import Permission and Role
 import { getFileType, withRetry } from "@/lib/utils"; // Import retry utility
 import appWriteConfig from "../appwrite/config";
 import { revalidatePath } from "next/cache";
-import { getCurrentUser } from "./user.action";
+import { getUserByEmail } from "./user.action";
 
 /**
  * Test Appwrite connection health
@@ -247,6 +247,15 @@ export const getFiles = async (ownerId: string, type?: string) => {
       ownerId
     );
 
+    if (!userDoc) {
+      return {
+        success: false,
+        error: "USER_NOT_FOUND",
+        message: "User document not found in database",
+        files: [],
+      };
+    }
+
     // 3. Check if the user has any files
     if (!userDoc.files || userDoc.files.length === 0) {
       return {
@@ -299,47 +308,70 @@ export const getFiles = async (ownerId: string, type?: string) => {
  */
 export const getCurrentUserFiles = async (type?: string) => {
   try {
-    // Get current user
-    const currentUser = await withRetry(() => getCurrentUser(), 1, 500);
-
-    if (!currentUser) {
-      return { shouldRedirect: true, redirectTo: "/sign-in" };
+    // Get current user with error handling
+    let authUser;
+    try {
+      const { account } = await createSessionClient();
+      authUser = await account.get();
+    } catch (sessionError) {
+      console.error("Session error in getCurrentUserFiles:", sessionError);
+      return {
+        files: [],
+        totalSize: 0,
+        error: "SESSION_ERROR",
+        message: "Unable to verify your session. Please refresh the page.",
+      };
     }
 
-    // Get files with enhanced error handling
+    if (!authUser?.email) {
+      return {
+        files: [],
+        totalSize: 0,
+        error: "NO_SESSION",
+        message: "No valid session found. Please refresh the page.",
+      };
+    }
+
+    // Get user document with error handling
+    let userDocument;
+    try {
+      userDocument = await getUserByEmail(authUser.email);
+    } catch (userError) {
+      console.error("Error getting user by email:", userError);
+      return {
+        files: [],
+        totalSize: 0,
+        error: "USER_FETCH_ERROR",
+        message: "Unable to load user profile. Please try again.",
+      };
+    }
+
+    if (!userDocument) {
+      return {
+        files: [],
+        totalSize: 0,
+        error: "USER_NOT_FOUND",
+        message: "User profile not found. Please contact support.",
+      };
+    }
+
+    // Get files with error handling
     const result = await withRetry(
-      () => getFiles(currentUser.$id, type),
+      () => getFiles(userDocument.$id, type),
       1,
       300
     );
 
-    // Handle different response types from getFiles
-    if (!result) {
+    if (!result || !result.success) {
       return {
         files: [],
         totalSize: 0,
-        shouldRedirect: false,
-        error: "CONNECTION_ERROR",
-        message:
-          "Unable to connect to server. Please check your internet connection.",
+        error: result?.error || "FETCH_ERROR",
+        message: result?.message || "Unable to load files. Please try again.",
       };
     }
 
-    // Check if getFiles returned an error
-    if (!result.success) {
-      return {
-        files: [],
-        totalSize: 0,
-        shouldRedirect: false,
-        error: result.error,
-        message: result.message,
-      };
-    }
-
-    // Success case - extract files from result
     const files = result.files || [];
-
-    // Calculate total size
     const totalSize = (files as { size: number }[]).reduce(
       (sum: number, file: { size: number }) => sum + (file?.size || 0),
       0
@@ -348,18 +380,16 @@ export const getCurrentUserFiles = async (type?: string) => {
     return {
       files,
       totalSize,
-      shouldRedirect: false,
       error: files.length === 0 ? "NO_FILES" : null,
       message: result.message,
     };
   } catch (error) {
-    console.error("Error getting current user files:", error);
+    console.error("Unexpected error in getCurrentUserFiles:", error);
     return {
       files: [],
       totalSize: 0,
-      shouldRedirect: false,
       error: "UNEXPECTED_ERROR",
-      message: "Something went wrong. Please try again.",
+      message: "Something went wrong. Please refresh the page.",
     };
   }
 };
