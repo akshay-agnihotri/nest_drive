@@ -24,7 +24,7 @@ const ErrorState = ({ error, message, type }: ErrorStateProps) => {
     return (
       <div className="empty-state">
         <Image
-          src="/assets/icons/empty-folder.svg"
+          src="/assets/icons/connection-error.svg"
           alt="Connection error"
           width={100}
           height={100}

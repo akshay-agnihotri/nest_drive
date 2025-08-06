@@ -4,6 +4,8 @@ export interface FileDocument {
   type: string;
   extension: string;
   size: number;
+  url: string;
+  bucketField: string;
 }
 
 export interface UserDocument {

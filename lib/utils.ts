@@ -1,5 +1,6 @@
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
+import appWriteConfig from "./appwrite/config";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -150,3 +151,12 @@ export const withRetry = async <T>(
   // NEVER THROW - Always return null
   return null;
 };
+
+/**
+ * Generate file URL from bucketField ID
+ */
+export const generateFileURL = (bucketField: string) => {
+  const { endpoint, projectId, bucketId } = appWriteConfig;
+  return `${endpoint}/storage/buckets/${bucketId}/files/${bucketField}/view?project=${projectId}`;
+};
+

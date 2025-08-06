@@ -46,14 +46,8 @@ export const uploadFile = async (file: File, ownerId: string, path: string) => {
     storage = adminClient.storage;
     databases = adminClient.databases;
 
-    const {
-      projectId,
-      endpoint,
-      bucketId,
-      databaseId,
-      usersCollectionId,
-      filesCollectionId,
-    } = appWriteConfig;
+    const { bucketId, databaseId, usersCollectionId, filesCollectionId } =
+      appWriteConfig;
 
     // Input validation
     if (!file) {
@@ -67,7 +61,7 @@ export const uploadFile = async (file: File, ownerId: string, path: string) => {
     uploadedFile = await withRetry(
       () =>
         storage.createFile(bucketId!, ID.unique(), file, [
-          Permission.read(Role.user(ownerId)),
+          Permission.read(Role.any()),
           Permission.update(Role.user(ownerId)),
           Permission.delete(Role.user(ownerId)),
         ]),
@@ -81,12 +75,11 @@ export const uploadFile = async (file: File, ownerId: string, path: string) => {
 
     try {
       // Step 2: Create file document
-      const fileUrl = `${endpoint}/storage/buckets/${bucketId}/files/${uploadedFile.$id}/view?project=${projectId}`;
       const { type, extension } = getFileType(file.name);
 
       const documentData = {
         name: uploadedFile.name,
-        url: fileUrl,
+        // ✅ Don't store URL at all
         type: type,
         bucketField: uploadedFile.$id,
         accountId: ownerId,
