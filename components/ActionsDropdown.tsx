@@ -22,6 +22,10 @@ import { actionsDropdownItems, generateFileDownloadURL } from "@/lib/utils";
 import Link from "next/link";
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
+import { renameFile } from "@/lib/actions/file.action"; // Add this import at the top
+import { showRenameSuccessToast, showRenameErrorToast } from "./Toast"; // ✅ Import toast functions
+import { usePathname } from "next/navigation";
+import FileDetails from "./FileDetails";
 
 const ActionsDropdown = ({ file }: { file: FileDocument }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -29,6 +33,66 @@ const ActionsDropdown = ({ file }: { file: FileDocument }) => {
   const [action, setAction] = useState<ActionType | null>(null);
   const [fileName, setFileName] = useState(file.name);
   const [isLoading, setIsLoading] = useState(false);
+  const pathName = usePathname();
+
+  const closeAllModal = () => {
+    setIsModalOpen(false);
+    setIsDropdownOpen(false);
+    setAction(null);
+    setFileName(file.name);
+    // setEmail([]);
+  };
+
+  const handleAction = async () => {
+    if (!action) return;
+
+    setIsLoading(true);
+    const { value } = action;
+
+    switch (value) {
+      case "rename":
+        // ✅ Implement rename functionality
+        try {
+          const nameWithoutExt =
+            fileName.lastIndexOf(".") !== -1
+              ? fileName.substring(0, fileName.lastIndexOf("."))
+              : fileName;
+
+          const result = await renameFile(
+            file.$id,
+            nameWithoutExt,
+            file.extension,
+            pathName
+          );
+
+          if (result.success) {
+            // ✅ Use toast function - TypeScript safe access
+            showRenameSuccessToast(result.data?.name || fileName);
+          } else {
+            // ✅ Use toast function
+            showRenameErrorToast(result.message);
+          }
+        } catch (error) {
+          console.error("Rename error:", error);
+          showRenameErrorToast("An unexpected error occurred.");
+        }
+        break;
+      case "share":
+        // Call share function here
+        break;
+      case "delete":
+        // Call delete function here
+        break;
+      case "details":
+        // Show details modal or redirect to details page
+        break;
+      default:
+        break;
+    }
+
+    setIsLoading(false);
+    closeAllModal();
+  };
 
   const renderDialogContent = () => {
     if (!action) return null;
@@ -50,17 +114,14 @@ const ActionsDropdown = ({ file }: { file: FileDocument }) => {
               onChange={(e) => setFileName(e.target.value)}
             />
           )}
+          {value === "details" && <FileDetails file={file} />}
         </DialogHeader>
         {["rename", "share", "delete"].includes(value) && (
           <DialogFooter className="flex flex-col gap-3 md:flex-row">
-            <Button>Cancel</Button>
-            <Button
-              className="shad-button loading"
-              disabled={isLoading}
-              onClick={() => {
-                setIsLoading(true);
-              }}
-            >
+            <Button onClick={closeAllModal} className="modal-cancel-button">
+              Cancel
+            </Button>
+            <Button onClick={handleAction} className="modal-submit-button">
               <p className="capitalize">{value}</p>
               {isLoading && (
                 <Image

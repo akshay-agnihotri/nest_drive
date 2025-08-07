@@ -6,8 +6,12 @@ import { cn, getFileType } from "@/lib/utils";
 import Image from "next/image";
 import Thumbnail from "./Thumbnail";
 import { uploadFile } from "@/lib/actions/file.action";
-import { toast } from "sonner";
 import { usePathname } from "next/navigation";
+import {
+  showUploadSuccessToast,
+  showUploadErrorToast,
+  showFileSizeErrorToast,
+} from "./Toast"; // ✅ Import toast functions
 
 // Helper function to create a delay
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -20,7 +24,7 @@ const Fileuploader = ({
   className: string;
 }) => {
   const [files, setFiles] = useState<File[]>([]);
-  const [isUploading, setIsUploading] = useState<boolean>(false); // This state is not used, consider removing it
+  const [isUploading, setIsUploading] = useState<boolean>(false);
   const path = usePathname();
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
@@ -29,31 +33,22 @@ const Fileuploader = ({
 
   const handleUploadAll = async () => {
     setIsUploading(true);
+
     await Promise.allSettled(
       files.map(async (file) => {
         // Client-side validation
         if (file.size > 50 * 1024 * 1024) {
-          // 50 MB limit
           console.log(`File size exceeds the limit of 50 MB.`);
-          // show error toast
-          toast.error(`Could not upload "${file.name}"`, {
-            description: "file size exceeds the limit of 50 MB.",
-            style: {
-              backgroundColor: "#FA7275",
-              color: "white",
-              border: "1px solid #dc2626",
-              borderRadius: "0.5rem",
-              boxShadow:
-                "0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)",
-              padding: "1rem",
-            },
-          });
+
+          // ✅ Use toast function
+          showFileSizeErrorToast(file.name);
+
           // Remove the file from the preview list
           setFiles((prev) => prev.filter((f) => f.name !== file.name));
           return;
         }
 
-        const maxRetries = 3; // Total number of attempts
+        const maxRetries = 3;
 
         // Loop for retrying the upload of a single file
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -62,41 +57,24 @@ const Fileuploader = ({
             const result = await uploadFile(file, ownerId, path);
 
             if (!result.success) {
-              // If the server returns a failure, treat it as an error to trigger a retry
               throw new Error(result.error || "Upload failed.");
             }
 
             // If successful:
             setFiles((prev) => prev.filter((f) => f.name !== file.name));
-            toast.success(`"${file.name}" has been uploaded.`, {
-              style: {
-                backgroundColor: "#22c55e",
-                color: "white",
-                border: "1px solid #16a34a",
-                borderRadius: "0.5rem",
-                boxShadow:
-                  "0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)",
-                padding: "1rem",
-              },
-            });
+
+            // ✅ Use toast function
+            showUploadSuccessToast(file.name);
+
             return; // Exit the retry loop for this file
           } catch (error) {
             console.log(`Attempt ${attempt} failed for "${file.name}":`, error);
 
             // If this was the final attempt, show the error toast
             if (attempt === maxRetries) {
-              toast.error(`Could not upload "${file.name}"`, {
-                description: "Please try again.",
-                style: {
-                  backgroundColor: "#FA7275",
-                  color: "white",
-                  border: "1px solid #dc2626",
-                  borderRadius: "0.5rem",
-                  boxShadow:
-                    "0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)", // for 'shadow-lg'
-                  padding: "1rem",
-                },
-              });
+              // ✅ Use toast function
+              showUploadErrorToast(file.name);
+
               // Remove the failed file from the preview list
               setFiles((prev) => prev.filter((f) => f.name !== file.name));
             } else {
@@ -107,6 +85,7 @@ const Fileuploader = ({
         }
       })
     );
+
     setIsUploading(false);
   };
 
@@ -120,11 +99,10 @@ const Fileuploader = ({
 
   const { getRootProps, getInputProps } = useDropzone({
     onDrop,
-    disabled: isUploading, // This will disable the dropzone when uploading
+    disabled: isUploading,
   });
 
   return (
-    // --- FIX IS HERE: Main container ab flex-col hai ---
     <div className="flex flex-col gap-4">
       <div {...getRootProps()} className="cursor-pointer">
         <input {...getInputProps()} />

@@ -7,6 +7,7 @@ export interface FileDocument {
   url: string;
   bucketField: string;
   $createdAt: string;
+  $updatedAt: string;
 }
 
 export interface UserDocument {

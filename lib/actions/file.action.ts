@@ -386,3 +386,121 @@ export const getCurrentUserFiles = async (type?: string) => {
     };
   }
 };
+
+export const renameFile = async (
+  fileId: string,
+  newName: string,
+  extension: string,
+  path: string
+) => {
+  try {
+    const { databases } = await createSessionClient();
+    const { databaseId, filesCollectionId } = appWriteConfig;
+
+    if (!newName?.trim()) {
+      return {
+        success: false,
+        error: "NAME_REQUIRED",
+        message: "New file name cannot be empty.",
+      };
+    }
+
+    // Sanitize filename (remove invalid characters)
+    const sanitizedName = newName.trim().replace(/[<>:"/\\|?*]/g, "");
+
+    if (sanitizedName.length === 0) {
+      return {
+        success: false,
+        error: "INVALID_NAME",
+        message: "File name contains only invalid characters.",
+      };
+    }
+
+    const fullName = `${sanitizedName}.${extension}`;
+
+    // Get current file document to verify ownership
+    const currentFile = await withRetry(
+      () => databases.getDocument(databaseId!, filesCollectionId!, fileId),
+      1,
+      300
+    );
+
+    if (!currentFile) {
+      return {
+        success: false,
+        error: "FILE_NOT_FOUND",
+        message: "File not found or has been deleted.",
+      };
+    }
+
+    // Get current user to verify ownership
+    const { account } = await createSessionClient();
+    const currentUser = await account.get();
+
+    console.log("Current file:", currentFile);
+    console.log("Current user ID:", currentUser.$id);
+    console.log("File owner:", currentFile.owner);
+
+    if (currentFile.accountId !== currentUser.$id) {
+      return {
+        success: false,
+        error: "PERMISSION_DENIED",
+        message: "You don't have permission to rename this file.",
+      };
+    }
+
+    // Check if name is actually different
+    if (currentFile.name === fullName) {
+      return {
+        success: true,
+        data: currentFile,
+        message: "File name is already up to date.",
+      };
+    }
+
+    // Update file document with new name
+    const updatedFile = await withRetry(
+      () =>
+        databases.updateDocument(databaseId!, filesCollectionId!, fileId, {
+          name: fullName,
+        }),
+      1,
+      500
+    );
+
+    if (!updatedFile) {
+      return {
+        success: false,
+        error: "UPDATE_FAILED",
+        message: "Failed to rename file. Please try again.",
+      };
+    }
+
+    // Revalidate the path to update UI
+    revalidatePath(path);
+
+    console.log(`File renamed: ${currentFile.name} → ${fullName}`);
+
+    return {
+      success: true,
+      data: updatedFile,
+      message: `File renamed to "${fullName}"`,
+    };
+  } catch (error) {
+    console.error("Error renaming file:", error);
+
+    if (error instanceof Error) {
+      return {
+        success: false,
+        error: "RENAME_ERROR",
+        message: error.message,
+      };
+    }
+
+    return {
+      success: false,
+      error: "UNEXPECTED_ERROR",
+      message: "An unexpected error occurred. Please try again.",
+    };
+  }
+};
