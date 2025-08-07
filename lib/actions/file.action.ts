@@ -1,7 +1,7 @@
 "use server";
 
 import { createAdminClient, createSessionClient } from "../appwrite";
-import { ID, Permission, Role } from "node-appwrite"; // 1. Import Permission and Role
+import { ID, Permission, Role, Query } from "node-appwrite"; // 1. Import Permission, Role, and Query
 import { getFileType, withRetry } from "@/lib/utils"; // Import retry utility
 import appWriteConfig from "../appwrite/config";
 import { revalidatePath } from "next/cache";
@@ -433,19 +433,19 @@ export const renameFile = async (
       };
     }
 
-    // Get current user to verify ownership
+    // Get current user to verify they own this file copy
     const { account } = await createSessionClient();
     const currentUser = await account.get();
 
     console.log("Current file:", currentFile);
     console.log("Current user ID:", currentUser.$id);
-    console.log("File owner:", currentFile.owner);
+    console.log("File owner:", currentFile.accountId);
 
     if (currentFile.accountId !== currentUser.$id) {
       return {
         success: false,
         error: "PERMISSION_DENIED",
-        message: "You don't have permission to rename this file.",
+        message: "You can only rename your own copy of this file.",
       };
     }
 
@@ -458,7 +458,8 @@ export const renameFile = async (
       };
     }
 
-    // Update file document with new name
+    // Update ONLY this user's file document with new name
+    // This won't affect other users' copies of the same file
     const updatedFile = await withRetry(
       () =>
         databases.updateDocument(databaseId!, filesCollectionId!, fileId, {
@@ -479,7 +480,9 @@ export const renameFile = async (
     // Revalidate the path to update UI
     revalidatePath(path);
 
-    console.log(`File renamed: ${currentFile.name} → ${fullName}`);
+    console.log(
+      `File renamed: ${currentFile.name} → ${fullName} (user copy only)`
+    );
 
     return {
       success: true,
@@ -493,6 +496,364 @@ export const renameFile = async (
       return {
         success: false,
         error: "RENAME_ERROR",
+        message: error.message,
+      };
+    }
+
+    return {
+      success: false,
+      error: "UNEXPECTED_ERROR",
+      message: "An unexpected error occurred. Please try again.",
+    };
+  }
+};
+
+export const deleteFile = async (fileId: string, path: string) => {
+  try {
+    const { databases, storage } = await createAdminClient();
+    const { databaseId, filesCollectionId, usersCollectionId, bucketId } =
+      appWriteConfig;
+
+    // Get current file document
+    const fileToDelete = await withRetry(
+      () => databases.getDocument(databaseId!, filesCollectionId!, fileId),
+      1,
+      300
+    );
+
+    if (!fileToDelete) {
+      return {
+        success: false,
+        error: "FILE_NOT_FOUND",
+        message: "File not found or has been deleted.",
+      };
+    }
+
+    // Get current user to verify they own this file copy
+    const { account } = await createSessionClient();
+    const currentUser = await account.get();
+
+    if (fileToDelete.accountId !== currentUser.$id) {
+      return {
+        success: false,
+        error: "PERMISSION_DENIED",
+        message: "You don't have permission to delete this file.",
+      };
+    }
+
+    // Get current user document
+    const currentUserDoc = await getUserByEmail(currentUser.email);
+    if (!currentUserDoc) {
+      return {
+        success: false,
+        error: "USER_NOT_FOUND",
+        message: "Your user profile was not found.",
+      };
+    }
+
+    // Check if this is the last copy of the file (same bucketField)
+    // If so, we need to delete the storage file too
+    const allFileDocuments = await databases.listDocuments(
+      databaseId!,
+      filesCollectionId!,
+      [Query.equal("bucketField", fileToDelete.bucketField)]
+    );
+
+    const otherCopies = allFileDocuments.documents.filter(
+      (doc: any) => doc.$id !== fileId
+    );
+
+    // Remove file from user's files list
+    const userFileIds =
+      currentUserDoc.files?.map((file: { $id: string }) => file.$id) || [];
+    const updatedFileIds = userFileIds.filter((id: string) => id !== fileId);
+
+    await withRetry(
+      () =>
+        databases.updateDocument(
+          databaseId!,
+          usersCollectionId!,
+          currentUserDoc.$id,
+          {
+            files: updatedFileIds,
+          }
+        ),
+      1,
+      500
+    );
+
+    // Delete the file document
+    await withRetry(
+      () => databases.deleteDocument(databaseId!, filesCollectionId!, fileId),
+      1,
+      500
+    );
+
+    // If this was the last copy, delete the storage file too
+    if (otherCopies.length === 0) {
+      try {
+        await withRetry(
+          () => storage.deleteFile(bucketId!, fileToDelete.bucketField),
+          1,
+          500
+        );
+        console.log(
+          `Storage file ${fileToDelete.bucketField} deleted (last copy)`
+        );
+      } catch (storageError) {
+        console.warn("Failed to delete storage file:", storageError);
+        // Don't fail the operation if storage deletion fails
+      }
+    }
+
+    // Revalidate the path to update UI
+    revalidatePath(path);
+
+    console.log(
+      `File deleted: ${fileToDelete.name} (${otherCopies.length} copies remaining)`
+    );
+
+    return {
+      success: true,
+      message: `File "${fileToDelete.name}" deleted successfully`,
+      wasLastCopy: otherCopies.length === 0,
+    };
+  } catch (error) {
+    console.error("Error deleting file:", error);
+
+    if (error instanceof Error) {
+      return {
+        success: false,
+        error: "DELETE_ERROR",
+        message: error.message,
+      };
+    }
+
+    return {
+      success: false,
+      error: "UNEXPECTED_ERROR",
+      message: "An unexpected error occurred. Please try again.",
+    };
+  }
+};
+
+export const shareFileWithUsers = async (
+  fileId: string,
+  emails: string[],
+  path: string
+) => {
+  try {
+    const { databases } = await createAdminClient();
+    const { databaseId, filesCollectionId, usersCollectionId } = appWriteConfig;
+
+    // Input validation
+    if (!emails || emails.length === 0) {
+      return {
+        success: false,
+        error: "EMAILS_REQUIRED",
+        message: "At least one email address is required to share the file.",
+      };
+    }
+
+    // Validate email formats
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const invalidEmails = emails.filter(
+      (email) => !emailRegex.test(email.trim())
+    );
+
+    if (invalidEmails.length > 0) {
+      return {
+        success: false,
+        error: "INVALID_EMAILS",
+        message: `Invalid email format: ${invalidEmails.join(", ")}`,
+      };
+    }
+
+    // Clean and deduplicate emails
+    const cleanEmails = [
+      ...new Set(emails.map((email) => email.trim().toLowerCase())),
+    ];
+
+    // Get current file document to verify access
+    const sourceFile = await withRetry(
+      () => databases.getDocument(databaseId!, filesCollectionId!, fileId),
+      1,
+      300
+    );
+
+    if (!sourceFile) {
+      return {
+        success: false,
+        error: "CONNECTION_ERROR",
+        message: "Check your internet connection and try again.",
+      };
+    }
+
+    // Get current user to verify they have access to this file
+    const { account } = await createSessionClient();
+    const currentUser = await account.get();
+    const currentUserDoc = await getUserByEmail(currentUser.email);
+
+    if (!currentUserDoc) {
+      return {
+        success: false,
+        error: "USER_NOT_FOUND",
+        message: "Your user profile was not found.",
+      };
+    }
+
+    // Check if current user has access to this file (owner or has shared copy)
+    const userFileIds =
+      currentUserDoc.files?.map((file: { $id: string }) => file.$id) || [];
+    if (!userFileIds.includes(fileId)) {
+      return {
+        success: false,
+        error: "PERMISSION_DENIED",
+        message: "You don't have access to this file.",
+      };
+    }
+
+    let successCount = 0;
+    const failedEmails: string[] = [];
+
+    // Create separate file copies for each user
+    for (const email of cleanEmails) {
+      try {
+        // Skip if trying to share with yourself
+        if (email === currentUser.email) {
+          continue;
+        }
+
+        const targetUser = await getUserByEmail(email);
+        if (!targetUser) {
+          failedEmails.push(email);
+          console.warn(`User with email ${email} not found`);
+          continue;
+        }
+
+        // Check if user already has this file (avoid duplicates)
+        const targetUserFileIds =
+          targetUser.files?.map((file: { $id: string }) => file.$id) || [];
+        const existingFile = targetUser.files?.find(
+          (file: any) =>
+            file.bucketField === sourceFile.bucketField &&
+            file.name === sourceFile.name
+        );
+
+        if (existingFile) {
+          console.log(`User ${email} already has this file`);
+          continue;
+        }
+
+        // Create a new file document for the target user
+        const sharedFileDocument = await withRetry(
+          () =>
+            databases.createDocument(
+              databaseId!,
+              filesCollectionId!,
+              ID.unique(),
+              {
+                name: sourceFile.name,
+                type: sourceFile.type,
+                bucketField: sourceFile.bucketField, // Same storage file
+                accountId: targetUser.$id, // Different owner
+                owner: targetUser.$id, // Different owner
+                extension: sourceFile.extension,
+                size: sourceFile.size,
+              }
+            ),
+          1,
+          500
+        );
+
+        if (!sharedFileDocument) {
+          failedEmails.push(email);
+          continue;
+        }
+
+        try {
+          // Add the new file to the target user's files list
+          const updatedFileIds = [...targetUserFileIds, sharedFileDocument.$id];
+
+          await withRetry(
+            () =>
+              databases.updateDocument(
+                databaseId!,
+                usersCollectionId!,
+                targetUser.$id,
+                {
+                  files: updatedFileIds,
+                }
+              ),
+            1,
+            500
+          );
+
+          successCount++;
+          console.log(`File shared successfully with ${email}`);
+        } catch (updateError) {
+          // If user document update fails, cleanup the created file document
+          console.error(
+            `Failed to update user document for ${email}, cleaning up created file document:`,
+            updateError
+          );
+
+          try {
+            await databases.deleteDocument(
+              databaseId!,
+              filesCollectionId!,
+              sharedFileDocument.$id
+            );
+            console.log(
+              `Cleaned up file document ${sharedFileDocument.$id} after user update failure`
+            );
+          } catch (cleanupError) {
+            console.error(
+              `Failed to cleanup file document ${sharedFileDocument.$id}:`,
+              cleanupError
+            );
+          }
+
+          failedEmails.push(email);
+        }
+      } catch (shareError) {
+        console.error(`Failed to share file with ${email}:`, shareError);
+        failedEmails.push(email);
+      }
+    }
+
+    // Revalidate the path to update UI
+    revalidatePath(path);
+
+    if (successCount === 0) {
+      return {
+        success: false,
+        error: "SHARE_FAILED",
+        message:
+          "Failed to share file with any users. Please check the email addresses and try again.",
+        failedEmails,
+      };
+    }
+
+    const message =
+      failedEmails.length > 0
+        ? `File shared with ${successCount} user${successCount > 1 ? "s" : ""}. Failed to share with: ${failedEmails.join(", ")}`
+        : `File shared with ${successCount} user${successCount > 1 ? "s" : ""}`;
+
+    return {
+      success: true,
+      data: sourceFile,
+      message,
+      sharedCount: successCount,
+      failedEmails,
+    };
+  } catch (error) {
+    console.error("Error sharing file:", error);
+
+    if (error instanceof Error) {
+      return {
+        success: false,
+        error: "SHARE_ERROR",
         message: error.message,
       };
     }

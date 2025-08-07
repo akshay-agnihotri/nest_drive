@@ -74,38 +74,16 @@ export const showDeleteErrorToast = (message: string) => {
   });
 };
 
-// Generic toasts
-export const showSuccessToast = (message: string, description?: string) => {
-  toast.success(message, {
-    description,
+export const showShareSuccessToast = (fileName: string, emailCount: number) => {
+  toast.success(`"${fileName}" has been shared successfully`, {
+    description: `Shared with ${emailCount} user${emailCount > 1 ? "s" : ""}`,
     style: toastStyles.success,
   });
 };
 
-export const showErrorToast = (message: string, description?: string) => {
-  toast.error(message, {
-    description,
+export const showShareErrorToast = (message: string) => {
+  toast.error(`Failed to share file`, {
+    description: message,
     style: toastStyles.error,
   });
 };
-
-// Loading toast
-export const showLoadingToast = (message: string) => {
-  return toast.loading(message, {
-    style: {
-      backgroundColor: "#3b82f6",
-      color: "white",
-      border: "1px solid #2563eb",
-      borderRadius: "0.5rem",
-      boxShadow:
-        "0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)",
-      padding: "1rem",
-    },
-  });
-};
-
-const Toast = () => {
-  return <div>Toast</div>;
-};
-
-export default Toast;

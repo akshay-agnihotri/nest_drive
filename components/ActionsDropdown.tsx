@@ -22,10 +22,21 @@ import { actionsDropdownItems, generateFileDownloadURL } from "@/lib/utils";
 import Link from "next/link";
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
-import { renameFile } from "@/lib/actions/file.action"; // Add this import at the top
-import { showRenameSuccessToast, showRenameErrorToast } from "./Toast"; // ✅ Import toast functions
+import {
+  renameFile,
+  shareFileWithUsers,
+  deleteFile,
+} from "@/lib/actions/file.action"; // Add this import at the top
+import {
+  showRenameSuccessToast,
+  showRenameErrorToast,
+  showShareSuccessToast,
+  showShareErrorToast,
+  showDeleteSuccessToast,
+  showDeleteErrorToast,
+} from "./Toast"; // ✅ Import toast functions
 import { usePathname } from "next/navigation";
-import FileDetails from "./FileDetails";
+import { FileDetails, ShareInput } from "./ActionsModalContent";
 
 const ActionsDropdown = ({ file }: { file: FileDocument }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -33,6 +44,7 @@ const ActionsDropdown = ({ file }: { file: FileDocument }) => {
   const [action, setAction] = useState<ActionType | null>(null);
   const [fileName, setFileName] = useState(file.name);
   const [isLoading, setIsLoading] = useState(false);
+  const [emails, setEmails] = useState<string[]>([]);
   const pathName = usePathname();
 
   const closeAllModal = () => {
@@ -40,7 +52,7 @@ const ActionsDropdown = ({ file }: { file: FileDocument }) => {
     setIsDropdownOpen(false);
     setAction(null);
     setFileName(file.name);
-    // setEmail([]);
+    setEmails([]);
   };
 
   const handleAction = async () => {
@@ -78,10 +90,45 @@ const ActionsDropdown = ({ file }: { file: FileDocument }) => {
         }
         break;
       case "share":
-        // Call share function here
+        // ✅ Implement share functionality
+        try {
+          if (emails.length === 0) {
+            showShareErrorToast("Please enter at least one email address.");
+            setIsLoading(false);
+            return;
+          }
+
+          const result = await shareFileWithUsers(file.$id, emails, pathName);
+
+          if (result.success) {
+            showShareSuccessToast(file.name, result.sharedCount || 0);
+            if (result.failedEmails && result.failedEmails.length > 0) {
+              showShareErrorToast(
+                `Failed to share with: ${result.failedEmails.join(", ")}`
+              );
+            }
+          } else {
+            showShareErrorToast(result.message);
+          }
+        } catch (error) {
+          console.error("Share error:", error);
+          showShareErrorToast("An unexpected error occurred.");
+        }
         break;
       case "delete":
-        // Call delete function here
+        // ✅ Implement delete functionality
+        try {
+          const result = await deleteFile(file.$id, pathName);
+
+          if (result.success) {
+            showDeleteSuccessToast(file.name);
+          } else {
+            showDeleteErrorToast(result.message);
+          }
+        } catch (error) {
+          console.error("Delete error:", error);
+          showDeleteErrorToast("An unexpected error occurred.");
+        }
         break;
       case "details":
         // Show details modal or redirect to details page
@@ -92,6 +139,10 @@ const ActionsDropdown = ({ file }: { file: FileDocument }) => {
 
     setIsLoading(false);
     closeAllModal();
+  };
+
+  const handleRemoveUser = (email: string) => {
+    setEmails((prevEmails) => prevEmails.filter((e) => e !== email));
   };
 
   const renderDialogContent = () => {
@@ -115,13 +166,41 @@ const ActionsDropdown = ({ file }: { file: FileDocument }) => {
             />
           )}
           {value === "details" && <FileDetails file={file} />}
+          {value === "share" && (
+            <ShareInput
+              file={file}
+              onInputChange={setEmails}
+              onRemove={handleRemoveUser}
+            />
+          )}
+          {value === "delete" && (
+            <div className="text-center text-light-100">
+              <p className="text-lg mb-2">
+                Are you sure you want to delete this file?
+              </p>
+              <p className="text-sm text-light-200 mb-4">
+                &ldquo;{file.name}&rdquo;
+              </p>
+              <p className="text-sm text-red-400">
+                This action cannot be undone. Only your copy will be deleted.
+              </p>
+            </div>
+          )}
         </DialogHeader>
         {["rename", "share", "delete"].includes(value) && (
           <DialogFooter className="flex flex-col gap-3 md:flex-row">
             <Button onClick={closeAllModal} className="modal-cancel-button">
               Cancel
             </Button>
-            <Button onClick={handleAction} className="modal-submit-button">
+            <Button
+              onClick={handleAction}
+              className={
+                value === "delete"
+                  ? "bg-red-600 hover:bg-red-700"
+                  : "modal-submit-button"
+              }
+              disabled={isLoading}
+            >
               <p className="capitalize">{value}</p>
               {isLoading && (
                 <Image

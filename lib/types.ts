@@ -1,13 +1,17 @@
 export interface FileDocument {
-  $id: string;
   name: string;
   type: string;
+  bucketField: string;
+  accountId: string;
   extension: string;
   size: number;
-  url: string;
-  bucketField: string;
+  $id: string;
+  $sequence: number;
   $createdAt: string;
   $updatedAt: string;
+  $permissions: Array<string>;
+  $databaseId: string;
+  $collectionId: string;
 }
 
 export interface UserDocument {
