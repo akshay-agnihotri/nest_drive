@@ -10,14 +10,15 @@
 
 ## 🎯 Search & Sort System
 
-| Feature | Implementation | Performance |
-|---------|---------------|-------------|
-| **Search** | Debounced (300ms) real-time filtering | Server-side processing |
-| **Sort Options** | Name A-Z/Z-A, Size, Date Oldest/Newest | Optimized database queries |
-| **URL State** | Search & sort params preserved in URL | Shareable filtered views |
-| **File Types** | 8 categories with dedicated navigation | Type-specific icons & routing |
+| Feature          | Implementation                         | Performance                   |
+| ---------------- | -------------------------------------- | ----------------------------- |
+| **Search**       | Debounced (300ms) real-time filtering  | Server-side processing        |
+| **Sort Options** | Name A-Z/Z-A, Size, Date Oldest/Newest | Optimized database queries    |
+| **URL State**    | Search & sort params preserved in URL  | Shareable filtered views      |
+| **File Types**   | 8 categories with dedicated navigation | Type-specific icons & routing |
 
 ### Supported File Types
+
 - 📄 **Documents** - PDF, DOC, DOCX, TXT
 - 🖼️ **Images** - JPG, PNG, GIF, SVG, WEBP
 - 🎥 **Videos** - MP4, AVI, MOV, WEBM
@@ -63,15 +64,15 @@ StoreIt uses a <strong>copy-based sharing architecture</strong>. When you share 
 
 ## 🛠️ Tech Stack
 
-| Layer           | Tools                                                     |
-| --------------- | --------------------------------------------------------- |
-| Frontend        | Next.js 15, App Router, React, TailwindCSS, Radix UI      |
-| Backend (API)   | Next.js Server Actions                                    |
-| Storage & DB    | Appwrite (Databases + Storage)                            |
-| Auth            | Appwrite Sessions (session + admin clients)               |
-| UX Enhancements | Debounced search, toast feedback, skeleton/loading states |
-| Search/Sort     | Server-side filtering, URL parameter management           |
-| State Management| use-debounce, Next.js searchParams, URL synchronization   |
+| Layer            | Tools                                                     |
+| ---------------- | --------------------------------------------------------- |
+| Frontend         | Next.js 15, App Router, React, TailwindCSS, Radix UI      |
+| Backend (API)    | Next.js Server Actions                                    |
+| Storage & DB     | Appwrite (Databases + Storage)                            |
+| Auth             | Appwrite Sessions (session + admin clients)               |
+| UX Enhancements  | Debounced search, toast feedback, skeleton/loading states |
+| Search/Sort      | Server-side filtering, URL parameter management           |
+| State Management | use-debounce, Next.js searchParams, URL synchronization   |
 
 ## 🔄 Clients Strategy
 
@@ -154,7 +155,7 @@ Debounced (500ms) email lookup → validates format → fetches user → enables
 ## 🧭 Roadmap Ideas
 
 - ~~Real-time search and sorting~~ ✅ **Completed**
-- ~~Multiple file type support~~ ✅ **Completed** 
+- ~~Multiple file type support~~ ✅ **Completed**
 - ~~URL state management~~ ✅ **Completed**
 - Version history
 - Multi-select bulk actions
