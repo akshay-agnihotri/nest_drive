@@ -182,9 +182,7 @@ const ActionsDropdown = ({ file }: { file: FileDocument }) => {
               <p className="text-lg mb-2">
                 Are you sure you want to delete this file?
               </p>
-              <p className="text-sm text-light-200 mb-4">
-                &ldquo;{file.name}&rdquo;
-              </p>
+              <p className="delete-file-name">&ldquo;{file.name}&rdquo;</p>
               <p className="text-sm text-red-400">
                 This action cannot be undone. Only your copy will be deleted.
               </p>

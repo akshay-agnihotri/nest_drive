@@ -6,8 +6,18 @@ import { FileDocument } from "@/lib/types";
 import { getCurrentUserFiles } from "@/lib/actions/file.action";
 import ErrorState from "@/components/ErrorState";
 
-const FilePage = async ({ params }: { params: Promise<{ type: string }> }) => {
+const FilePage = async ({ 
+  params, 
+  searchParams 
+}: { 
+  params: Promise<{ type: string }>;
+  searchParams: Promise<{ search?: string; sort?: string }>;
+}) => {
   const { type } = await params;
+  const { search, sort } = await searchParams;
+
+  console.log("search", search);
+  console.log("sort", sort);
 
   if (
     type !== "document" &&
@@ -29,7 +39,7 @@ const FilePage = async ({ params }: { params: Promise<{ type: string }> }) => {
   }
 
   // Layout guarantees user exists, so handle errors gracefully without redirect
-  const result = await getCurrentUserFiles(type);
+  const result = await getCurrentUserFiles(type, search || undefined, sort || undefined);
 
   const { files, totalSize, error, message } = result;
   const formattedTotalSize = formatBytes(totalSize || 0);

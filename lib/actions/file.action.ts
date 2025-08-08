@@ -296,11 +296,17 @@ export const getFiles = async (ownerId: string, type?: string) => {
 };
 
 /**
- * Gets files for the current authenticated user with optional type filtering
+ * Gets files for the current authenticated user with optional type filtering, search, and sorting
  * @param type - The type of files to filter by (e.g., 'image', 'document', 'all'). If omitted, all files are returned.
+ * @param search - Search term to filter files by name
+ * @param sort - Sort option: 'name-asc', 'name-desc', 'size-asc', 'size-desc', 'date-asc', 'date-desc'
  * @returns An object with files array and total size, or redirect info if user not authenticated
  */
-export const getCurrentUserFiles = async (type?: string) => {
+export const getCurrentUserFiles = async (
+  type?: string,
+  search?: string,
+  sort?: string
+) => {
   try {
     // Get current user with error handling
     let authUser;
@@ -317,28 +323,8 @@ export const getCurrentUserFiles = async (type?: string) => {
       };
     }
 
-    if (!authUser?.email) {
-      return {
-        files: [],
-        totalSize: 0,
-        error: "NO_SESSION",
-        message: "No valid session found. Please refresh the page.",
-      };
-    }
-
-    // Get user document with error handling
-    let userDocument;
-    try {
-      userDocument = await getUserByEmail(authUser.email);
-    } catch (userError) {
-      console.error("Error getting user by email:", userError);
-      return {
-        files: [],
-        totalSize: 0,
-        error: "USER_FETCH_ERROR",
-        message: "Unable to load user profile. Please try again.",
-      };
-    }
+    // Get user document
+    const userDocument = await getUserByEmail(authUser.email);
 
     if (!userDocument) {
       return {
@@ -366,16 +352,73 @@ export const getCurrentUserFiles = async (type?: string) => {
     }
 
     const files = result.files || [];
+
+    // Apply search filter if search term provided
+    let filteredFiles = files;
+    if (search && search.trim()) {
+      const searchTerm = search.toLowerCase().trim();
+      filteredFiles = files.filter((file: any) =>
+        file.name.toLowerCase().includes(searchTerm)
+      );
+    }
+
+    // Apply sorting - always sort, default to newest first
+    if (filteredFiles.length > 0) {
+      switch (sort) {
+        case "name-asc":
+          filteredFiles.sort((a: any, b: any) => a.name.localeCompare(b.name));
+          break;
+        case "name-desc":
+          filteredFiles.sort((a: any, b: any) => b.name.localeCompare(a.name));
+          break;
+        case "size-asc":
+          filteredFiles.sort((a: any, b: any) => (a.size || 0) - (b.size || 0));
+          break;
+        case "size-desc":
+          filteredFiles.sort((a: any, b: any) => (b.size || 0) - (a.size || 0));
+          break;
+        case "date-asc":
+          filteredFiles.sort(
+            (a: any, b: any) =>
+              new Date(a.$createdAt).getTime() -
+              new Date(b.$createdAt).getTime()
+          );
+          break;
+        case "date-desc":
+          filteredFiles.sort(
+            (a: any, b: any) =>
+              new Date(b.$createdAt).getTime() -
+              new Date(a.$createdAt).getTime()
+          );
+          break;
+        default:
+          // Default to date-desc (newest first)
+          filteredFiles.sort(
+            (a: any, b: any) =>
+              new Date(b.$createdAt).getTime() -
+              new Date(a.$createdAt).getTime()
+          );
+      }
+    }
+
     const totalSize = (files as { size: number }[]).reduce(
       (sum: number, file: { size: number }) => sum + (file?.size || 0),
       0
     );
 
     return {
-      files,
+      files: filteredFiles,
       totalSize,
-      error: files.length === 0 ? "NO_FILES" : null,
-      message: result.message,
+      error:
+        filteredFiles.length === 0 && files.length > 0
+          ? "NO_RESULTS"
+          : filteredFiles.length === 0
+            ? "NO_FILES"
+            : null,
+      message:
+        search && filteredFiles.length === 0 && files.length > 0
+          ? `No files found matching "${search}"`
+          : result.message,
     };
   } catch (error) {
     console.error("Unexpected error in getCurrentUserFiles:", error);

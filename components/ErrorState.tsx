@@ -64,6 +64,24 @@ const ErrorState = ({ error, message, type }: ErrorStateProps) => {
     );
   }
 
+  if (error === "NO_RESULTS") {
+    return (
+      <div className="empty-state">
+        <Image
+          src="/assets/icons/search.svg"
+          alt="No search results"
+          width={100}
+          height={100}
+          className="opacity-50"
+        />
+        <h3 className="h3 mt-4">No results found</h3>
+        <p className="body-1 text-light-200 mt-2">
+          {message || "Try adjusting your search terms or filters."}
+        </p>
+      </div>
+    );
+  }
+
   if (error === "Invalid type") {
     return (
       <div className="flex flex-col justify-center items-center">
