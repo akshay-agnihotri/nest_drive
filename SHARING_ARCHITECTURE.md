@@ -83,6 +83,45 @@ Each user document contains:
 4. Check if this was the last copy (same bucketField)
 5. If last copy, delete the storage file to free up space
 
+## Appwrite Client Architecture
+
+The system uses two types of Appwrite clients for different permission scopes:
+
+### `createAdminClient()`
+- Uses API key for admin-level operations
+- Required for operations that affect multiple users or need elevated permissions
+- **Provides access to**: databases, storage
+- **Cannot access**: account service (missing account scope)
+- Used in: `uploadFile`, database operations in `shareFileWithUsers`, `deleteFile`
+
+### `createSessionClient()`
+- Uses user session cookies for user-scoped operations
+- Limited to operations within the authenticated user's permissions
+- **Provides access to**: databases, account (with user context)
+- Used in: `renameFile`, `getCurrentUserFiles`, account operations
+
+### Client Usage Strategy
+
+Due to Appwrite's scope limitations, some functions require both clients:
+
+- **Admin Client**: For database/storage operations requiring elevated permissions
+- **Session Client**: For account operations to get current user info
+- **Mixed Usage**: Functions like `shareFileWithUsers` and `deleteFile` use both clients
+
+**Important**: Admin API keys don't have account scope, so we cannot consolidate all operations into a single admin client.
+
+Example in `shareFileWithUsers`:
+```typescript
+// Admin client for database operations (elevated permissions)
+const { databases } = await createAdminClient();
+
+// Session client for account operations (user context)
+const { account } = await createSessionClient();
+const currentUser = await account.get();
+```
+const { databases, account } = await createAdminClient();
+```
+
 ## Key Functions
 
 ### `shareFileWithUsers(fileId, emails, path)`
@@ -91,18 +130,52 @@ Each user document contains:
 - Validates user has access to the source file
 - Handles duplicate detection and error reporting
 - Returns success count and failed emails
+- **Clients**: Uses `createAdminClient()` for database operations + `createSessionClient()` for user verification
 
 ### `deleteFile(fileId, path)`
 
 - Removes user's copy of the file
 - Automatically cleans up storage if last copy
 - Only affects the specific user's file document
+- **Clients**: Uses `createAdminClient()` for database/storage operations + `createSessionClient()` for user verification
 
 ### `renameFile(fileId, newName, extension, path)`
 
 - Updates only the user's copy of the file
 - Validates ownership before allowing rename
 - Other users' copies maintain their original names
+- **Client**: Uses `createSessionClient()` for user-scoped operations (both database and account)
+
+## Error Handling & Data Integrity
+
+### Robust Error Handling
+
+- **Comprehensive try-catch blocks** in all file operations
+- **Graceful degradation** with user-friendly error messages
+- **Automatic cleanup** on operation failures (prevents orphaned data)
+- **Retry mechanisms** for network-related failures using `withRetry` utility
+
+### Query Syntax
+
+The system uses proper Appwrite Query syntax for database operations:
+
+```typescript
+// Correct: Using Query.equal() for filtering
+const allFileDocuments = await databases.listDocuments(
+  databaseId!,
+  filesCollectionId!,
+  [Query.equal("bucketField", fileToDelete.bucketField)]
+);
+
+// Incorrect: String-based queries (deprecated)
+// [{ attribute: "bucketField", operator: "equal", value: fileToDelete.bucketField }]
+```
+
+### Data Cleanup Strategy
+
+- **Smart Storage Management**: Storage files deleted only when last copy is removed
+- **User Document Consistency**: File arrays updated atomically with document operations
+- **Orphan Prevention**: Failed operations trigger cleanup of partially created data
 
 ## Benefits of This Architecture
 
@@ -112,6 +185,10 @@ Each user document contains:
 4. **Scalable Sharing**: No limit on how many times a file can be shared
 5. **Natural Cleanup**: Storage files are automatically removed when no longer needed
 6. **Permission Simplicity**: No complex ACLs or permission matrices
+7. **Performance Optimized**: Single client usage per operation reduces overhead
+8. **Robust Error Handling**: Comprehensive error management with user-friendly messages
+9. **Data Integrity**: Automatic cleanup prevents orphaned data and storage waste
+10. **Modern Query Syntax**: Uses latest Appwrite Query APIs for optimal performance
 
 ## Migration from Previous System
 

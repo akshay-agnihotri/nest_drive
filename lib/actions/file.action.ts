@@ -6,6 +6,7 @@ import { getFileType, withRetry } from "@/lib/utils"; // Import retry utility
 import appWriteConfig from "../appwrite/config";
 import { revalidatePath } from "next/cache";
 import { getUserByEmail } from "./user.action";
+import { UserDocument } from "../types";
 
 /**
  * Test Appwrite connection health
@@ -394,7 +395,7 @@ export const renameFile = async (
   path: string
 ) => {
   try {
-    const { databases } = await createSessionClient();
+    const { databases, account } = await createSessionClient();
     const { databaseId, filesCollectionId } = appWriteConfig;
 
     if (!newName?.trim()) {
@@ -434,7 +435,6 @@ export const renameFile = async (
     }
 
     // Get current user to verify they own this file copy
-    const { account } = await createSessionClient();
     const currentUser = await account.get();
 
     console.log("Current file:", currentFile);
@@ -637,44 +637,25 @@ export const deleteFile = async (fileId: string, path: string) => {
   }
 };
 
-export const shareFileWithUsers = async (
+export const shareFileWithUser = async (
   fileId: string,
-  emails: string[],
+  userToShareFile: UserDocument | null,
   path: string
 ) => {
   try {
     const { databases } = await createAdminClient();
     const { databaseId, filesCollectionId, usersCollectionId } = appWriteConfig;
 
-    // Input validation
-    if (!emails || emails.length === 0) {
+    // Validate input
+    if (!userToShareFile) {
       return {
         success: false,
-        error: "EMAILS_REQUIRED",
-        message: "At least one email address is required to share the file.",
+        error: "NO_USER_SELECTED",
+        message: "Please select a user to share the file with.",
       };
     }
 
-    // Validate email formats
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    const invalidEmails = emails.filter(
-      (email) => !emailRegex.test(email.trim())
-    );
-
-    if (invalidEmails.length > 0) {
-      return {
-        success: false,
-        error: "INVALID_EMAILS",
-        message: `Invalid email format: ${invalidEmails.join(", ")}`,
-      };
-    }
-
-    // Clean and deduplicate emails
-    const cleanEmails = [
-      ...new Set(emails.map((email) => email.trim().toLowerCase())),
-    ];
-
-    // Get current file document to verify access
+    // Get current file document
     const sourceFile = await withRetry(
       () => databases.getDocument(databaseId!, filesCollectionId!, fileId),
       1,
@@ -702,151 +683,131 @@ export const shareFileWithUsers = async (
       };
     }
 
-    // Check if current user has access to this file (owner or has shared copy)
-    const userFileIds =
-      currentUserDoc.files?.map((file: { $id: string }) => file.$id) || [];
-    if (!userFileIds.includes(fileId)) {
+    // Check if trying to share with yourself
+    if (userToShareFile.$id === currentUser.$id) {
       return {
         success: false,
-        error: "PERMISSION_DENIED",
-        message: "You don't have access to this file.",
+        error: "SELF_SHARE_ERROR",
+        message: "You cannot share a file with yourself.",
       };
     }
 
-    let successCount = 0;
-    const failedEmails: string[] = [];
+    // Check if user already has this file (avoid duplicates)
+    const targetUserFileIds =
+      userToShareFile.files?.map((file: { $id: string }) => file.$id) || [];
+    const existingFile = userToShareFile.files?.find(
+      (file: any) =>
+        file.bucketField === sourceFile.bucketField &&
+        file.name === sourceFile.name
+    );
 
-    // Create separate file copies for each user
-    for (const email of cleanEmails) {
+    if (existingFile) {
+      return {
+        success: false,
+        error: "DUPLICATE_SHARE",
+        message: `${userToShareFile.fullName} already has this file.`,
+      };
+    }
+
+    try {
+      // Create a new file document for the target user
+      const sharedFileDocument = await withRetry(
+        () =>
+          databases.createDocument(
+            databaseId!,
+            filesCollectionId!,
+            ID.unique(),
+            {
+              name: sourceFile.name,
+              type: sourceFile.type,
+              bucketField: sourceFile.bucketField, // Same storage file
+              accountId: userToShareFile.$id, // Different owner
+              owner: userToShareFile.$id, // Different owner
+              extension: sourceFile.extension,
+              size: sourceFile.size,
+            }
+          ),
+        1,
+        500
+      );
+
+      if (!sharedFileDocument) {
+        return {
+          success: false,
+          error: "SHARE_FAILED",
+          message: "Failed to create shared file document.",
+        };
+      }
+
       try {
-        // Skip if trying to share with yourself
-        if (email === currentUser.email) {
-          continue;
-        }
+        // Add the new file to the target user's files list
+        const updatedFileIds = [...targetUserFileIds, sharedFileDocument.$id];
 
-        const targetUser = await getUserByEmail(email);
-        if (!targetUser) {
-          failedEmails.push(email);
-          console.warn(`User with email ${email} not found`);
-          continue;
-        }
-
-        // Check if user already has this file (avoid duplicates)
-        const targetUserFileIds =
-          targetUser.files?.map((file: { $id: string }) => file.$id) || [];
-        const existingFile = targetUser.files?.find(
-          (file: any) =>
-            file.bucketField === sourceFile.bucketField &&
-            file.name === sourceFile.name
-        );
-
-        if (existingFile) {
-          console.log(`User ${email} already has this file`);
-          continue;
-        }
-
-        // Create a new file document for the target user
-        const sharedFileDocument = await withRetry(
+        await withRetry(
           () =>
-            databases.createDocument(
+            databases.updateDocument(
               databaseId!,
-              filesCollectionId!,
-              ID.unique(),
+              usersCollectionId!,
+              userToShareFile.$id,
               {
-                name: sourceFile.name,
-                type: sourceFile.type,
-                bucketField: sourceFile.bucketField, // Same storage file
-                accountId: targetUser.$id, // Different owner
-                owner: targetUser.$id, // Different owner
-                extension: sourceFile.extension,
-                size: sourceFile.size,
+                files: updatedFileIds,
               }
             ),
           1,
           500
         );
 
-        if (!sharedFileDocument) {
-          failedEmails.push(email);
-          continue;
-        }
+        // Revalidate the path to update UI
+        revalidatePath(path);
+
+        console.log(`File shared successfully with ${userToShareFile.email}`);
+
+        return {
+          success: true,
+          data: sourceFile,
+          message: `File shared with ${userToShareFile.fullName}`,
+          targetUser: userToShareFile,
+        };
+      } catch (updateError) {
+        // If user document update fails, cleanup the created file document
+        console.error(
+          `Failed to update user document for ${userToShareFile.email}, cleaning up created file document:`,
+          updateError
+        );
 
         try {
-          // Add the new file to the target user's files list
-          const updatedFileIds = [...targetUserFileIds, sharedFileDocument.$id];
-
-          await withRetry(
-            () =>
-              databases.updateDocument(
-                databaseId!,
-                usersCollectionId!,
-                targetUser.$id,
-                {
-                  files: updatedFileIds,
-                }
-              ),
-            1,
-            500
+          await databases.deleteDocument(
+            databaseId!,
+            filesCollectionId!,
+            sharedFileDocument.$id
           );
-
-          successCount++;
-          console.log(`File shared successfully with ${email}`);
-        } catch (updateError) {
-          // If user document update fails, cleanup the created file document
+          console.log(
+            `Cleaned up file document ${sharedFileDocument.$id} after user update failure`
+          );
+        } catch (cleanupError) {
           console.error(
-            `Failed to update user document for ${email}, cleaning up created file document:`,
-            updateError
+            `Failed to cleanup file document ${sharedFileDocument.$id}:`,
+            cleanupError
           );
-
-          try {
-            await databases.deleteDocument(
-              databaseId!,
-              filesCollectionId!,
-              sharedFileDocument.$id
-            );
-            console.log(
-              `Cleaned up file document ${sharedFileDocument.$id} after user update failure`
-            );
-          } catch (cleanupError) {
-            console.error(
-              `Failed to cleanup file document ${sharedFileDocument.$id}:`,
-              cleanupError
-            );
-          }
-
-          failedEmails.push(email);
         }
-      } catch (shareError) {
-        console.error(`Failed to share file with ${email}:`, shareError);
-        failedEmails.push(email);
+
+        return {
+          success: false,
+          error: "UPDATE_FAILED",
+          message: "Failed to update user's file list. Please try again.",
+        };
       }
-    }
-
-    // Revalidate the path to update UI
-    revalidatePath(path);
-
-    if (successCount === 0) {
+    } catch (shareError) {
+      console.error(
+        `Failed to share file with ${userToShareFile.email}:`,
+        shareError
+      );
       return {
         success: false,
-        error: "SHARE_FAILED",
-        message:
-          "Failed to share file with any users. Please check the email addresses and try again.",
-        failedEmails,
+        error: "SHARE_ERROR",
+        message: "Failed to create shared file copy. Please try again.",
       };
     }
-
-    const message =
-      failedEmails.length > 0
-        ? `File shared with ${successCount} user${successCount > 1 ? "s" : ""}. Failed to share with: ${failedEmails.join(", ")}`
-        : `File shared with ${successCount} user${successCount > 1 ? "s" : ""}`;
-
-    return {
-      success: true,
-      data: sourceFile,
-      message,
-      sharedCount: successCount,
-      failedEmails,
-    };
   } catch (error) {
     console.error("Error sharing file:", error);
 

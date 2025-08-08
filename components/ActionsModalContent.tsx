@@ -1,10 +1,44 @@
-import { FileDocument } from "@/lib/types";
+import { FileDocument, UserDocument } from "@/lib/types";
 import Thumbnail from "./Thumbnail";
 import FormattedDateTime from "./FormattedDateTime";
 import { formatBytes, formatDateTime } from "@/lib/utils";
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
 import Image from "next/image";
+import { useState, useEffect, useRef } from "react";
+import { getUserByEmail } from "@/lib/actions/user.action";
+
+const UserThumbnail = ({
+  user,
+  size = 32,
+}: {
+  user: UserDocument;
+  size?: number;
+}) => {
+  return (
+    <div
+      className="rounded-full bg-brand/20 flex items-center justify-center overflow-hidden"
+      style={{ width: size, height: size }}
+    >
+      {user.avatar ? (
+        <Image
+          src={user.avatar}
+          alt={user.fullName}
+          width={size}
+          height={size}
+          className="rounded-full object-cover"
+        />
+      ) : (
+        <span
+          className="text-brand font-medium"
+          style={{ fontSize: `${size * 0.4}px` }}
+        >
+          {user.fullName.charAt(0).toUpperCase()}
+        </span>
+      )}
+    </div>
+  );
+};
 
 const ImageThumbnail = ({ file }: { file: FileDocument }) => {
   return (
@@ -53,10 +87,91 @@ export const ShareInput = ({
   onRemove,
 }: {
   file: FileDocument;
-  onInputChange: (emails: string[]) => void;
-  onRemove: (email: string) => void;
+  onInputChange: (user: UserDocument | null) => void;
+  onRemove: () => void;
 }) => {
-  console.log(onRemove);
+  const [inputValue, setInputValue] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [foundUser, setFoundUser] = useState<UserDocument | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Cleanup timer on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
+  }, []);
+
+  // Debounced user fetching
+  useEffect(() => {
+    // Clear previous timer
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+
+    // Reset states
+    setError(null);
+    setFoundUser(null);
+    onInputChange(null);
+
+    if (!inputValue.trim()) {
+      setIsLoading(false);
+      return;
+    }
+
+    setIsLoading(true);
+
+    // Set new timer
+    debounceTimerRef.current = setTimeout(async () => {
+      try {
+        const email = inputValue.trim();
+
+        // Basic email validation
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(email)) {
+          setError("Please enter a valid email address");
+          setIsLoading(false);
+          return;
+        }
+
+        // Fetch user
+        const user = await getUserByEmail(email);
+
+        if (user) {
+          const userDoc = user as unknown as UserDocument;
+          setFoundUser(userDoc);
+          setError(null);
+          onInputChange(userDoc);
+        } else {
+          setError("User not found with this email address");
+          setFoundUser(null);
+          onInputChange(null);
+        }
+      } catch (err) {
+        console.error("Error fetching user:", err);
+        setError("Error searching for user. Please try again.");
+        setFoundUser(null);
+        onInputChange(null);
+      } finally {
+        setIsLoading(false);
+      }
+    }, 500); // 500ms debounce delay
+  }, [inputValue, onInputChange]);
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setInputValue(e.target.value);
+  };
+
+  const handleRemoveUser = () => {
+    setInputValue("");
+    setFoundUser(null);
+    setError(null);
+    onInputChange(null);
+    onRemove();
+  };
 
   return (
     <>
@@ -66,39 +181,69 @@ export const ShareInput = ({
         <p className="subtitle-2 pl-1 text-light-100">
           Share file with other users
         </p>
-        <Input
-          type="email"
-          placeholder="Enter email addresses (comma separated)"
-          className="share-input-field"
-          onChange={(e) => onInputChange(e.target.value.trim().split(","))}
-        />
-        <div className="pt-4">
-          <div className="flex justify-between">
-            <p className="subtitle-2 text-light-100">Shared With:</p>
-            <p className="subtitle-2 text-light-200">
-              {file.users.length} users
-            </p>
-            <ul className="pt-2">
-              {file.users.map((email) => (
-                <li
-                  key={email}
-                  className="flex items-center justify-between gap-2"
-                >
-                  <p className="subtitle-2">{email}</p>
-                  <Button onClick={() => onRemove(email)}>
-                    <Image
-                      src="/assets/icons/remove.svg"
-                      alt="Remove Icon"
-                      width={24}
-                      height={24}
-                      className="remove-icon"
-                    />
-                  </Button>
-                </li>
-              ))}
-            </ul>
-          </div>
+
+        <div className="relative">
+          <Input
+            type="email"
+            placeholder="Enter email address"
+            className="share-input-field"
+            value={inputValue}
+            onChange={handleInputChange}
+          />
+
+          {/* Loading indicator */}
+          {isLoading && (
+            <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+              <Image
+                src="/assets/icons/loader.svg"
+                alt="Searching..."
+                width={16}
+                height={16}
+                className="animate-spin"
+              />
+            </div>
+          )}
         </div>
+
+        {/* Error message */}
+        {error && <p className="text-red-400 text-sm mt-2 pl-1">{error}</p>}
+
+        {/* Found user display */}
+        {foundUser && (
+          <div className="mt-4 p-3 bg-brand/10 rounded-lg border border-brand/20">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <UserThumbnail user={foundUser} size={32} />
+                <div>
+                  <p className="text-light-100 font-medium">
+                    {foundUser.fullName}
+                  </p>
+                  <p className="text-light-200 text-sm">{foundUser.email}</p>
+                </div>
+              </div>
+              <Button
+                onClick={handleRemoveUser}
+                className="p-1 hover:bg-red-500/20 rounded"
+                variant="ghost"
+              >
+                <Image
+                  src="/assets/icons/remove.svg"
+                  alt="Remove"
+                  width={16}
+                  height={16}
+                  className="text-red-400"
+                />
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Instructions */}
+        <p className="text-light-200 text-xs mt-3 pl-1">
+          {foundUser
+            ? "User found! Click 'Share' to send the file."
+            : "Type an email address to find a user to share with."}
+        </p>
       </div>
     </>
   );

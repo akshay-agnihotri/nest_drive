@@ -15,7 +15,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { ActionType, FileDocument } from "@/lib/types";
+import { ActionType, FileDocument, UserDocument } from "@/lib/types";
 import { useState } from "react";
 import Image from "next/image";
 import { actionsDropdownItems, generateFileDownloadURL } from "@/lib/utils";
@@ -24,7 +24,7 @@ import { Input } from "./ui/input";
 import { Button } from "./ui/button";
 import {
   renameFile,
-  shareFileWithUsers,
+  shareFileWithUser,
   deleteFile,
 } from "@/lib/actions/file.action"; // Add this import at the top
 import {
@@ -44,7 +44,9 @@ const ActionsDropdown = ({ file }: { file: FileDocument }) => {
   const [action, setAction] = useState<ActionType | null>(null);
   const [fileName, setFileName] = useState(file.name);
   const [isLoading, setIsLoading] = useState(false);
-  const [emails, setEmails] = useState<string[]>([]);
+  const [userToShareFile, setUserToShareFile] = useState<UserDocument | null>(
+    null
+  );
   const pathName = usePathname();
 
   const closeAllModal = () => {
@@ -52,7 +54,6 @@ const ActionsDropdown = ({ file }: { file: FileDocument }) => {
     setIsDropdownOpen(false);
     setAction(null);
     setFileName(file.name);
-    setEmails([]);
   };
 
   const handleAction = async () => {
@@ -92,27 +93,30 @@ const ActionsDropdown = ({ file }: { file: FileDocument }) => {
       case "share":
         // ✅ Implement share functionality
         try {
-          if (emails.length === 0) {
-            showShareErrorToast("Please enter at least one email address.");
+          if (userToShareFile === null) {
+            showShareErrorToast("Please select a user to share with.");
             setIsLoading(false);
             return;
           }
 
-          const result = await shareFileWithUsers(file.$id, emails, pathName);
+          const result = await shareFileWithUser(
+            file.$id,
+            userToShareFile,
+            pathName
+          );
 
           if (result.success) {
-            showShareSuccessToast(file.name, result.sharedCount || 0);
-            if (result.failedEmails && result.failedEmails.length > 0) {
-              showShareErrorToast(
-                `Failed to share with: ${result.failedEmails.join(", ")}`
-              );
-            }
+            showShareSuccessToast(file.name);
+            // Additional success message with user name
+            console.log(
+              `File "${file.name}" shared successfully with ${userToShareFile.fullName}`
+            );
           } else {
-            showShareErrorToast(result.message);
+            showShareErrorToast(result.message || "Failed to share file.");
           }
         } catch (error) {
           console.error("Share error:", error);
-          showShareErrorToast("An unexpected error occurred.");
+          showShareErrorToast("An unexpected error occurred while sharing.");
         }
         break;
       case "delete":
@@ -141,8 +145,8 @@ const ActionsDropdown = ({ file }: { file: FileDocument }) => {
     closeAllModal();
   };
 
-  const handleRemoveUser = (email: string) => {
-    setEmails((prevEmails) => prevEmails.filter((e) => e !== email));
+  const handleRemoveUser = () => {
+    setUserToShareFile(null);
   };
 
   const renderDialogContent = () => {
@@ -169,7 +173,7 @@ const ActionsDropdown = ({ file }: { file: FileDocument }) => {
           {value === "share" && (
             <ShareInput
               file={file}
-              onInputChange={setEmails}
+              onInputChange={setUserToShareFile}
               onRemove={handleRemoveUser}
             />
           )}
@@ -194,11 +198,7 @@ const ActionsDropdown = ({ file }: { file: FileDocument }) => {
             </Button>
             <Button
               onClick={handleAction}
-              className={
-                value === "delete"
-                  ? "bg-red-600 hover:bg-red-700"
-                  : "modal-submit-button"
-              }
+              className="modal-submit-button"
               disabled={isLoading}
             >
               <p className="capitalize">{value}</p>

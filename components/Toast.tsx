@@ -1,4 +1,3 @@
-import React from "react";
 import { toast } from "sonner";
 
 // Common toast styles
@@ -74,9 +73,8 @@ export const showDeleteErrorToast = (message: string) => {
   });
 };
 
-export const showShareSuccessToast = (fileName: string, emailCount: number) => {
+export const showShareSuccessToast = (fileName: string) => {
   toast.success(`"${fileName}" has been shared successfully`, {
-    description: `Shared with ${emailCount} user${emailCount > 1 ? "s" : ""}`,
     style: toastStyles.success,
   });
 };
