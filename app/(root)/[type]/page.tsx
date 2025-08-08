@@ -9,6 +9,25 @@ import ErrorState from "@/components/ErrorState";
 const FilePage = async ({ params }: { params: Promise<{ type: string }> }) => {
   const { type } = await params;
 
+  if (
+    type !== "document" &&
+    type !== "image" &&
+    type !== "video" &&
+    type !== "spreadsheet" &&
+    type !== "presentation" &&
+    type !== "audio" &&
+    type !== "archive" &&
+    type !== "code" &&
+    type !== "other"
+  ) {
+    return (
+      <ErrorState
+        error="Invalid type"
+        message="The requested file type does not exist."
+      />
+    );
+  }
+
   // Layout guarantees user exists, so handle errors gracefully without redirect
   const result = await getCurrentUserFiles(type);
 
@@ -18,7 +37,7 @@ const FilePage = async ({ params }: { params: Promise<{ type: string }> }) => {
   return (
     <div className="page-container">
       <section className="w-full">
-        <h1 className="h1 capitalize">{type === "all" ? "All Files" : type}</h1>
+        <h1 className="h1 capitalize">{type}</h1>
 
         <div className="total-size-section">
           <p className="body-1">

@@ -64,26 +64,44 @@ const ErrorState = ({ error, message, type }: ErrorStateProps) => {
     );
   }
 
+  if (error === "Invalid type") {
+    return (
+      <div className="flex flex-col justify-center items-center">
+        <Image
+          src="/assets/icons/page-not-found.svg"
+          alt="Invalid file type"
+          width={300}
+          height={300}
+          className="opacity-50"
+        />
+        <h3 className="h3 mt-4 text-red-500">Page Not Found</h3>
+        <p className="body-1 text-light-200 mt-2">{message}</p>
+      </div>
+    );
+  }
+
   // Default error state
   return (
     <div className="empty-state">
       <Image
-        src="/assets/icons/empty-folder.svg"
+        src="/assets/icons/error.svg"
         alt="Error"
         width={100}
         height={100}
-        className="opacity-30"
+        className="opacity-50"
       />
-      <h3 className="h3 mt-4">Something went wrong</h3>
+      <h3 className="h3 mt-4 text-red-500">Something went wrong</h3>
       <p className="body-1 text-light-200 mt-2">
-        {message || "Please try refreshing the page."}
+        {message || `An unexpected error occurred: ${error}`}
       </p>
-      <button
-        onClick={handleRefresh}
-        className="mt-4 px-4 py-2 bg-brand text-white rounded-lg hover:bg-brand-dark"
-      >
-        Refresh Page
-      </button>
+      <div className="flex gap-4 mt-4">
+        <button
+          onClick={handleRefresh}
+          className="px-4 py-2 bg-brand text-white rounded-lg hover:bg-brand-dark"
+        >
+          Try Again
+        </button>
+      </div>
     </div>
   );
 };

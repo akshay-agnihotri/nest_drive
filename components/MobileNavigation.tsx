@@ -48,7 +48,7 @@ const MobileNavigation = ({
             <span className="sr-only">Toggle navigation menu</span>
           </Button>
         </SheetTrigger>
-        <SheetContent side="right" className="shad-sheet h-screen px-3">
+        <SheetContent side="right" className="shad-sheet h-screen px-3 overflow-scroll">
           <SheetTitle>
             <div className="header-user">
               <Image
