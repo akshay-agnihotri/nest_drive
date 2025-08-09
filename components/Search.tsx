@@ -3,8 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { Input } from "@/components/ui/input";
-import { Search as SearchIcon } from "lucide-react";
-import { useDebouncedCallback } from "use-debounce";
+import Image from "next/image";
 
 const Search = () => {
   const router = useRouter();
@@ -15,8 +14,8 @@ const Search = () => {
     searchParams.get("search") || ""
   );
 
-  // Debounced search function to avoid too many URL updates
-  const debouncedSearch = useDebouncedCallback((term: string) => {
+  // Search function to update URL
+  const performSearch = (term: string) => {
     const params = new URLSearchParams(searchParams);
 
     if (term.trim()) {
@@ -27,7 +26,7 @@ const Search = () => {
 
     // Keep existing sort parameter
     router.replace(`${pathname}?${params.toString()}`);
-  }, 300);
+  };
 
   // Update search term when URL changes (browser back/forward)
   useEffect(() => {
@@ -38,30 +37,44 @@ const Search = () => {
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     setSearchTerm(value);
-    debouncedSearch(value);
+  };
+
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    performSearch(searchTerm);
   };
 
   const clearSearch = () => {
     setSearchTerm("");
-    debouncedSearch("");
   };
 
   return (
     <div className="search">
-      <div className="search-input-wrapper">
-        <SearchIcon className="search-icon" size={20} />
+      <form onSubmit={handleSubmit} className="search-input-wrapper">
+        <Image
+          src="/assets/icons/search.svg"
+          alt="Search"
+          width={24}
+          height={24}
+          className="search-icon"
+        />
         <Input
           value={searchTerm}
           onChange={handleSearchChange}
-          placeholder="Search files..."
+          placeholder="Search files... (Press Enter to search)"
           className="search-input"
         />
         {searchTerm && (
-          <button onClick={clearSearch} className="search-clear" type="button">
-            ✕
-          </button>
+          <Image
+            src="/assets/icons/remove.svg"
+            alt="Clear search"
+            width={24}
+            height={24}
+            onClick={clearSearch}
+            className="search-clear"
+          />
         )}
-      </div>
+      </form>
     </div>
   );
 };
