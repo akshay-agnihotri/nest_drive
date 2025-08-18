@@ -102,7 +102,7 @@ export const loginUserWithOtp = async (userId: string, otp: string) => {
     (await cookies()).set("appwrite-session", session.secret, {
       path: "/",
       httpOnly: true,
-      sameSite: "strict",
+      sameSite: "none",
       secure: process.env.NODE_ENV === "production",
       expires: new Date(session.expire), // Set cookie expiration
     });
