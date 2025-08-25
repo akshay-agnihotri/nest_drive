@@ -103,8 +103,7 @@ export const loginUserWithOtp = async (userId: string, otp: string) => {
       path: "/",
       httpOnly: true,
       sameSite: "none",
-      secure: process.env.NODE_ENV === "production",
-      expires: new Date(session.expire), // Set cookie expiration
+      secure: process.env.NODE_ENV === "production",// Set cookie expiration
     });
 
     console.log("User logged in successfully!");
