@@ -13,7 +13,7 @@ const ErrorState = ({ error, message, type }: ErrorStateProps) => {
   const router = useRouter();
 
   const handleRefresh = () => {
-    router.refresh(); // ✅ Soft refresh - revalidates server components
+    router.refresh();
   };
 
   if (
