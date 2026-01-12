@@ -6,7 +6,7 @@ import FormattedDateTime from "./FormattedDateTime";
 import ActionsDropdown from "./ActionsDropdown";
 
 const Card = ({ file }: { file: FileDocument }) => {
-  // ✅ Generate URL on-demand from bucketField
+  // Generate URL on-demand from bucketField
   const fileUrl = generateFileURL(file.bucketField);
 
   return (

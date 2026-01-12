@@ -1,22 +1,19 @@
 "use server";
 
 import { createAdminClient, createSessionClient } from "../appwrite";
-import { ID, Permission, Role, Query } from "node-appwrite"; // 1. Import Permission, Role, and Query
-import { getFileType, withRetry } from "@/lib/utils"; // Import retry utility
+import { ID, Permission, Role, Query } from "node-appwrite";
+import { getFileType, withRetry } from "@/lib/utils";
 import appWriteConfig from "../appwrite/config";
 import { revalidatePath } from "next/cache";
 import { getUserByEmail } from "./user.action";
 import { UserDocument } from "../types";
 
-/**
- * Test Appwrite connection health
- */
+
 export const testAppwriteConnection = async () => {
   try {
     const { databases } = await createAdminClient();
     const { databaseId } = appWriteConfig;
 
-    // Simple ping to check connection
     await databases.listCollections(databaseId!);
     return true;
   } catch (error) {
@@ -25,17 +22,6 @@ export const testAppwriteConnection = async () => {
   }
 };
 
-/**
- * Uploads a single file to Appwrite Storage and creates a corresponding document in the database.
-   1. Store the file document
-   2. Get the ID of the newly stored file document.
-   3. Fetch the user's existing list of files.
-   4. Combine the old list with the new list.
-   5. Update the user's document with the complete list of related files.
- * @param file - A single File object to upload.
- * @param ownerId - The document ID of the user in the 'users' collection.
- * @returns An object with success status and the created database document or an error message.
- */
 export const uploadFile = async (file: File, ownerId: string, path: string) => {
   let uploadedFile: any = null;
   let createdFileDocument: any = null;
@@ -80,7 +66,6 @@ export const uploadFile = async (file: File, ownerId: string, path: string) => {
 
       const documentData = {
         name: uploadedFile.name,
-        // ✅ Don't store URL at all
         type: type,
         bucketField: uploadedFile.$id,
         accountId: ownerId,
@@ -151,7 +136,7 @@ export const uploadFile = async (file: File, ownerId: string, path: string) => {
   } catch (error) {
     console.error("Error during file upload and document creation:", error);
 
-    // ✅ Fixed: Only cleanup if we have storage and databases initialized
+    // Only cleanup if we have storage and databases initialized
     if (storage && databases && uploadedFile && !createdFileDocument) {
       try {
         await safeCleanup(
@@ -213,12 +198,6 @@ const safeCleanup = async (
   }
 };
 
-/**
- * Fetches the files associated with a specific user, with an option to filter by type.
- * @param ownerId - The document ID of the user in the 'users' collection.
- * @param type - The type of files to filter by (e.g., 'image', 'document'). If omitted, all files are returned.
- * @returns An array of file documents.
- */
 export const getFiles = async (ownerId: string, type?: string) => {
   try {
     // 1. Get the databases service from our admin client
@@ -295,13 +274,7 @@ export const getFiles = async (ownerId: string, type?: string) => {
   }
 };
 
-/**
- * Gets files for the current authenticated user with optional type filtering, search, and sorting
- * @param type - The type of files to filter by (e.g., 'image', 'document', 'all'). If omitted, all files are returned.
- * @param search - Search term to filter files by name
- * @param sort - Sort option: 'name-asc', 'name-desc', 'size-asc', 'size-desc', 'date-asc', 'date-desc'
- * @returns An object with files array and total size, or redirect info if user not authenticated
- */
+
 export const getCurrentUserFiles = async (
   type?: string,
   search?: string,
@@ -501,8 +474,6 @@ export const renameFile = async (
       };
     }
 
-    // Update ONLY this user's file document with new name
-    // This won't affect other users' copies of the same file
     const updatedFile = await withRetry(
       () =>
         databases.updateDocument(databaseId!, filesCollectionId!, fileId, {
@@ -594,8 +565,6 @@ export const deleteFile = async (fileId: string, path: string) => {
       };
     }
 
-    // Check if this is the last copy of the file (same bucketField)
-    // If so, we need to delete the storage file too
     const allFileDocuments = await databases.listDocuments(
       databaseId!,
       filesCollectionId!,
@@ -763,9 +732,9 @@ export const shareFileWithUser = async (
             {
               name: sourceFile.name,
               type: sourceFile.type,
-              bucketField: sourceFile.bucketField, // Same storage file
-              accountId: userToShareFile.$id, // Different owner
-              owner: userToShareFile.$id, // Different owner
+              bucketField: sourceFile.bucketField,
+              accountId: userToShareFile.$id,
+              owner: userToShareFile.$id, 
               extension: sourceFile.extension,
               size: sourceFile.size,
             }

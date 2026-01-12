@@ -81,12 +81,7 @@ export const getFileIcon = (extension: string, type: string) => {
 
 export const createFileToUrl = (file: File) => URL.createObjectURL(file);
 
-/**
- * Converts a file size in bytes to a human-readable string (e.g., KB, MB, GB).
- * @param bytes - The file size in bytes.
- * @param decimals - The number of decimal places to include (default is 2).
- * @returns A formatted string representing the file size.
- */
+
 export function formatBytes(bytes: number, decimals = 2) {
   if (bytes === 0) return "0 Bytes";
 
@@ -99,44 +94,30 @@ export function formatBytes(bytes: number, decimals = 2) {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + " " + sizes[i];
 }
 
-/**
- * Retry utility function for handling network issues
- * @param fn - The async function to retry
- * @param retries - Number of retries (default: 1, total 2 attempts)
- * @param delay - Delay between retries in milliseconds (default: 500ms for quick retry)
- * @returns The result of the function or null if all retries fail
- */
+
 export const withRetry = async <T>(
   fn: () => Promise<T>,
   retries: number = 1,
   delay: number = 500
 ): Promise<T | null> => {
-  let lastError: unknown = null;
 
   for (let i = 0; i <= retries; i++) {
     try {
-      console.log(`🔄 Attempt ${i + 1}/${retries + 1}...`);
       const result = await fn();
 
       if (result) {
-        console.log(`✅ Success on attempt ${i + 1}`);
         return result;
       }
 
       if (i < retries) {
-        console.log(
-          `⚠️ Attempt ${i + 1}: Function returned falsy value, retrying...`
-        );
         if (delay > 0) {
           await new Promise((resolve) => setTimeout(resolve, delay));
         }
       }
     } catch (error) {
-      lastError = error;
-      console.log(`❌ Attempt ${i + 1}: Error occurred:`, error);
-
+      console.log(error);
+      
       if (i < retries) {
-        console.log(`🔄 Retrying in ${delay}ms...`);
         if (delay > 0) {
           await new Promise((resolve) => setTimeout(resolve, delay));
         }
@@ -144,17 +125,9 @@ export const withRetry = async <T>(
     }
   }
 
-  console.log(
-    `💀 All ${retries + 1} attempts failed, returning null. Last error:`,
-    lastError
-  );
-  // NEVER THROW - Always return null
   return null;
 };
 
-/**
- * Generate file URL from bucketField ID
- */
 export const generateFileURL = (bucketField: string) => {
   const { endpoint, projectId, bucketId } = appWriteConfig;
   return `${endpoint}/storage/buckets/${bucketId}/files/${bucketField}/view?project=${projectId}`;

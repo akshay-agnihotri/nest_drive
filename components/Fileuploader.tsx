@@ -11,7 +11,7 @@ import {
   showUploadSuccessToast,
   showUploadErrorToast,
   showFileSizeErrorToast,
-} from "./Toast"; // ✅ Import toast functions
+} from "./Toast"; // Import toast functions
 
 // Helper function to create a delay
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -40,7 +40,7 @@ const Fileuploader = ({
         if (file.size > 50 * 1024 * 1024) {
           console.log(`File size exceeds the limit of 50 MB.`);
 
-          // ✅ Use toast function
+          // Use toast function
           showFileSizeErrorToast(file.name);
 
           // Remove the file from the preview list
@@ -63,7 +63,7 @@ const Fileuploader = ({
             // If successful:
             setFiles((prev) => prev.filter((f) => f.name !== file.name));
 
-            // ✅ Use toast function
+            // Use toast function
             showUploadSuccessToast(file.name);
 
             return; // Exit the retry loop for this file
@@ -72,7 +72,7 @@ const Fileuploader = ({
 
             // If this was the final attempt, show the error toast
             if (attempt === maxRetries) {
-              // ✅ Use toast function
+              // Use toast function
               showUploadErrorToast(file.name);
 
               // Remove the failed file from the preview list
